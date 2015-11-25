@@ -1030,7 +1030,7 @@ task_delete = function(event, context, argv) {
                         output_results = function(success_result, failure_result) {
                             var result = success_result.length + " tasks deleted. " + failure_result.length + " tasks weren't deleted\n";
                             if (success_result.length > 0) {
-                                result += "Deleted tasks:\n";
+                                result += "Deleted tasks:\n```\n";
                                 var title_border = "+";
                                 var title_vert = "|";
                                 var task_title = "Task ID";
@@ -1054,7 +1054,7 @@ task_delete = function(event, context, argv) {
                                 title_border += "+";
                                 title_vert += "|";
 
-                                result += title_border + "\n" + title_vert + "\n" + title_border;
+                                result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
 
                                 for (var success_index = 0; success_index < success_result.length; success_index++) {
                                     result += "| ";
@@ -1162,7 +1162,7 @@ task_delete = function(event, context, argv) {
                                     task_id = columns[column_map.id];
                                 }
                                 request({
-                                    url: "/tasks/" + task_id + "?current_user=" + encodeURIComponent(task_body.current_user),
+                                    url: "/tasks/" + task_id + "?current_user=" + encodeURIComponent(task_body.current_user) + "&tag=" + encodeURIComponent("deletebatch:" + filename),
                                     baseUrl: api_endpoint,
                                     method: "DELETE",
                                     json: true
