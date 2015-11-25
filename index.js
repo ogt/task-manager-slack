@@ -182,6 +182,101 @@ process_task = function(event, context, title, description, finish, estimate, ow
     }
 }
 
+add_success_result = function(success_result) {
+    var result = "```\n";
+    var max_task_id = 7;
+    var max_title = 5;
+    for (var success_index = 0; success_index < success_result.length; success_index++) {
+        if (max_task_id < success_result[success_index].task_id.toString().length) {
+            max_task_id = success_result[success_index].task_id.toString().length;
+        }
+        if (max_title < success_result[success_index].title.length) {
+            max_title = success_result[success_index].title.length;
+        }
+    }
+    if (max_title > 30) {
+        max_title = 30;
+    }
+
+    var title_border = "+";
+    var title_vert = "|";
+    var task_title = "Task ID";
+    var title_title = "Title";
+    for (var index = 0; index < max_task_id + 2; index++) {
+        title_border += "-";
+        if (index - 1 >= 0 && index - 1 < task_title.length) {
+            title_vert += task_title[index - 1];
+        } else {
+            title_vert += " ";
+        }
+    }
+
+    title_border += "+";
+    title_vert += "|";
+
+    for (var index = 0; index < max_title + 2; index++) {
+        title_border += "-";
+        if (index - 1 >= 0 && index - 1 < title_title.length) {
+            title_vert += title_title[index - 1];
+        } else {
+            title_vert += " ";
+        }
+    }
+    title_vert += "|";
+    title_border += "+";
+    result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+    for (var success_index = 0; success_index < success_result.length; success_index++) {
+        result += "| ";
+        var task_id = success_result[success_index].task_id.toString();
+        result += task_id;
+        for (var index = 1 + task_id.length; index < max_task_id + 2; index++) {
+            result += " ";
+        }
+        result += "| ";
+        var title = success_result[success_index].title;
+        if (title.length > 30) {
+            title = title.substring(0, 27) + "...";
+        }
+        result += title;
+        for (var index = 1 + title.length; index < max_title + 2; index++) {
+            result += " ";
+        }
+        result += "|\n";
+    }
+    result += title_border + "\n";
+    result += "```\n";
+
+    return result;
+}
+
+parse_csv_line = function(curr_line) {
+    var columns = [];
+
+    for (var char_index = 0; char_index < curr_line.length;) {
+        var curr_column = "";
+        var expect_quotes = false;
+        if (curr_line[char_index] == '"') {
+            char_index++;
+            expect_quotes = true;
+        }
+        while ((!expect_quotes && curr_line[char_index] != ",") || (expect_quotes && curr_line[char_index] != '"')) {
+            curr_column += curr_line[char_index];
+            char_index++;
+            if (char_index == curr_line.length) {
+                break;
+            }
+        }
+        columns.push(curr_column.trim());
+        char_index++;
+        if (expect_quotes) {
+            char_index++;
+        }
+    }
+
+    return columns;
+}
+
 add = function(event, context, argv) {
     var title = null, description = null, finish = null, estimate = null, owner = null, tags = null, batch = null;
     var has_errors = false;
@@ -264,251 +359,171 @@ add = function(event, context, argv) {
                         fail_message(event, context, error_message);
                     });
         } else {
-            request(batch, function(err, resp, body) {
-                if (err) {
-                    console.log("Failed to get URL: " + batch);
-                    console.log(err);
-                    fail_message(event, context, "Failed to retrieve batch URL!");
-                } else if (resp.statusCode != 200) {
-                    console.log("Failed to get URL: " + batch);
-                    console.log(resp);
-                    console.log(body);
-                    fail_message(event, context, "Failed to retrieve batch URL!");
-                } else {
-                    var parts = batch.split("/");
-                    var filename = parts[parts.length - 1].split("?")[0];
+            get_user_from_slack(event, context, task_body, function(task_body) {
+                request(batch, function(err, resp, body) {
+                    if (err) {
+                        console.log("Failed to get URL: " + batch);
+                        console.log(err);
+                        fail_message(event, context, "Failed to retrieve batch URL!");
+                    } else if (resp.statusCode != 200) {
+                        console.log("Failed to get URL: " + batch);
+                        console.log(resp);
+                        console.log(body);
+                        fail_message(event, context, "Failed to retrieve batch URL!");
+                    } else {
+                        var parts = batch.split("/");
+                        var filename = parts[parts.length - 1].split("?")[0];
 
-                    output_results = function(success_result, failure_result) {
-                        var result = success_result.length + " tasks added. " + failure_result.length + " tasks failed to add.\n";
-                        if (success_result.length > 0) {
-                            result += "Successfully added tasks:\n```\n";
-                            var max_task_id = 7;
-                            var max_title = 5;
-                            for (var success_index = 0; success_index < success_result.length; success_index++) {
-                                if (max_task_id < success_result[success_index].task_id.toString().length) {
-                                    max_task_id = success_result[success_index].task_id.toString().length;
-                                }
-                                if (max_title < success_result[success_index].title.length) {
-                                    max_title = success_result[success_index].title.length;
-                                }
-                            }
-                            if (max_title > 30) {
-                                max_title = 30;
+                        output_results = function(success_result, failure_result) {
+                            var result = success_result.length + " tasks added. " +
+                                failure_result.length + " tasks failed to add.\n";
+                            if (success_result.length > 0) {
+                                result += "Successfully added tasks:\n";
+                                result += add_success_result(success_result);
                             }
 
-                            var title_border = "+";
-                            var title_vert = "|";
-                            var task_title = "Task ID";
-                            var title_title = "Title";
-                            for (var index = 0; index < max_task_id + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < task_title.length) {
-                                    title_vert += task_title[index - 1];
-                                } else {
-                                    title_vert += " ";
+                            if (failure_result.length > 0) {
+                                result += "Failed tasks:\n```\n";
+                                var title_border = "+";
+                                var title_vert = "|";
+                                var task_title = "Line No";
+                                var error_title = "Error";
+
+                                var max_task_id = 7;
+                                var max_title = 5;
+                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                                    if (max_task_id < failure_result[failure_index].line.toString().length) {
+                                        max_task_id = failure_result[failure_index].line.toString().length;
+                                    }
+                                    if (max_title < failure_result[failure_index].title.length) {
+                                        max_title = failure_result[failure_index].title.length;
+                                    }
                                 }
+
+                                for (var index = 0; index < max_task_id + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < task_title.length) {
+                                        title_vert += task_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+
+                                title_border += "+";
+                                title_vert += "|";
+
+                                for (var index = 0; index < max_title + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < title_title.length) {
+                                        title_vert += title_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+                                title_vert += "|";
+                                title_border += "+";
+                                result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                                    result += "| ";
+                                    var task_id = failure_result[failure_index].line.toString();
+                                    result += task_id;
+                                    for (var index = 1 + task_id.length; index < max_task_id + 2; index++) {
+                                        result += " ";
+                                    }
+                                    result += "| ";
+                                    var title = failure_result[failure_index].error;
+                                    result += title;
+                                    for (var index = 1 + title.length; index < max_title + 2; index++) {
+                                        result += " ";
+                                    }
+                                    result += "|\n";
+                                }
+                                result += title_border + "\n";
+
+                                result += "```\n";
                             }
 
-                            title_border += "+";
-                            title_vert += "|";
+                            output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+                        };
 
-                            for (var index = 0; index < max_title + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < title_title.length) {
-                                    title_vert += title_title[index - 1];
-                                } else {
-                                    title_vert += " ";
-                                }
-                            }
-                            title_vert += "|";
-                            title_border += "+";
-                            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+                        var success_result = [];
+                        var failure_result = [];
 
-                            for (var success_index = 0; success_index < success_result.length; success_index++) {
-                                result += "| ";
-                                var task_id = success_result[success_index].task_id.toString();
-                                result += task_id;
-                                for (var index = 1 + task_id.length; index < max_task_id + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "| ";
-                                var title = success_result[success_index].title;
-                                if (title.length > 30) {
-                                    title = title.substring(0, 27) + "...";
-                                }
-                                result += title;
-                                for (var index = 1 + title.length; index < max_title + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "|\n";
-                            }
-                            result += title_border + "\n";
-                            result += "```\n";
-                        }
+                        var column_map = {
+                            title: -1,
+                            description: -1,
+                            finish: -1,
+                            estimate: -1,
+                            owner: -1,
+                            tags: -1
+                        };
 
-                        if (failure_result.length > 0) {
-                            result += "Failed tasks:\n```\n";
-                            var title_border = "+";
-                            var title_vert = "|";
-                            var task_title = "Line No";
-                            var error_title = "Error";
-
-                            var max_task_id = 7;
-                            var max_title = 5;
-                            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
-                                if (max_task_id < failure_result[failure_index].line.toString().length) {
-                                    max_task_id = failure_result[failure_index].line.toString().length;
-                                }
-                                if (max_title < failure_result[failure_index].title.length) {
-                                    max_title = failure_result[failure_index].title.length;
-                                }
-                            }
-
-                            for (var index = 0; index < max_task_id + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < task_title.length) {
-                                    title_vert += task_title[index - 1];
-                                } else {
-                                    title_vert += " ";
-                                }
-                            }
-
-                            title_border += "+";
-                            title_vert += "|";
-
-                            for (var index = 0; index < max_title + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < title_title.length) {
-                                    title_vert += title_title[index - 1];
-                                } else {
-                                    title_vert += " ";
-                                }
-                            }
-                            title_vert += "|";
-                            title_border += "+";
-                            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
-
-                            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
-                                result += "| ";
-                                var task_id = failure_result[failure_index].line.toString();
-                                result += task_id;
-                                for (var index = 1 + task_id.length; index < max_task_id + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "| ";
-                                var title = failure_result[failure_index].error;
-                                result += title;
-                                for (var index = 1 + title.length; index < max_title + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "|\n";
-                            }
-                            result += title_border + "\n";
-
-                            result += "```\n";
-                        }
-
-                        output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
-                    };
-
-                    var success_result = [];
-                    var failure_result = [];
-
-                    var column_map = {
-                        title: -1,
-                        description: -1,
-                        finish: -1,
-                        estimate: -1,
-                        owner: -1,
-                        tags: -1
-                    };
-
-                    var lines = body.split("\n");
-                    var column_names = lines[0].split(",");
-                    for (var column_index = 0; column_index < column_names.length; column_index++) {
-                        var column_name = column_names[column_index];
-                        if (column_map[column_name] == -1) {
-                            column_map[column_name] = column_index;
-                        }
-                    }
-
-                    var running_queue = 0;
-                    for (var line_index = 1; line_index < lines.length; line_index++) {
-                        var columns = [];
-                        var curr_line = lines[line_index];
-                        for (var char_index = 0; char_index < curr_line.length;) {
-                            var curr_column = "";
-                            var expect_quotes = false;
-                            if (curr_line[char_index] == '"') {
-                                char_index++;
-                                expect_quotes = true;
-                            }
-                            while ((!expect_quotes && curr_line[char_index] != ",") || (expect_quotes && curr_line[char_index] != '"')) {
-                                curr_column += curr_line[char_index];
-                                char_index++;
-                                if (char_index == curr_line.length) {
-                                    break;
-                                }
-                            }
-                            columns.push(curr_column.trim());
-                            char_index++;
-                            if (expect_quotes) {
-                                char_index++;
+                        var lines = body.split("\n");
+                        var column_names = lines[0].split(",");
+                        for (var column_index = 0; column_index < column_names.length; column_index++) {
+                            var column_name = column_names[column_index];
+                            if (column_map[column_name] == -1) {
+                                column_map[column_name] = column_index;
                             }
                         }
 
-                        running_queue++;
-                        (function(columns, line_index) {
-                            var task_title = null, task_description = null, task_finish = null, task_estimate = null;
-                            var task_owner = null, task_tags = null;
-                            if (column_map.title != -1) {
-                                task_title = columns[column_map.title];
-                            }
-                            if (column_map.description != -1) {
-                                task_description = columns[column_map.description];
-                            }
-                            if (column_map.finish != -1) {
-                                task_finish = columns[column_map.finish];
-                            }
-                            if (column_map.estimate != -1) {
-                                task_estimate = columns[column_map.estimate];
-                            }
-                            if (column_map.owner != -1) {
-                                task_owner = columns[column_map.owner];
-                            }
-                            if (column_map.tags != -1) {
-                                task_tags = columns[column_map.tags];
-                            }
-                            if (title != null) {
-                                task_title = title;
-                            }
-                            if (description != null) {
-                                task_description = description;
-                            }
-                            if (finish != null) {
-                                task_finish = finish;
-                            }
-                            if (estimate != null) {
-                                task_estimate = estimate;
-                            }
-                            if (owner != null) {
-                                task_owner = owner;
-                            }
-                            if (tags != null) {
-                                task_tags = tags;
-                            }
+                        var running_queue = 0;
+                        for (var line_index = 1; line_index < lines.length; line_index++) {
+                            var curr_line = lines[line_index];
+                            var columns = parse_csv_line(curr_line);
 
-                            if (task_tags == null) {
-                                task_tags = "";
-                            }
-                            if (task_tags != "") {
-                                task_tags += "";
-                            }
-                            task_tags += "addbatch:" + filename;
+                            running_queue++;
+                            (function(columns, line_index) {
+                                var task_title = null, task_description = null, task_finish = null, task_estimate = null;
+                                var task_owner = null, task_tags = null;
+                                if (column_map.title != -1) {
+                                    task_title = columns[column_map.title];
+                                }
+                                if (column_map.description != -1) {
+                                    task_description = columns[column_map.description];
+                                }
+                                if (column_map.finish != -1) {
+                                    task_finish = columns[column_map.finish];
+                                }
+                                if (column_map.estimate != -1) {
+                                    task_estimate = columns[column_map.estimate];
+                                }
+                                if (column_map.owner != -1) {
+                                    task_owner = columns[column_map.owner];
+                                }
+                                if (column_map.tags != -1) {
+                                    task_tags = columns[column_map.tags];
+                                }
+                                if (title != null) {
+                                    task_title = title;
+                                }
+                                if (description != null) {
+                                    task_description = description;
+                                }
+                                if (finish != null) {
+                                    task_finish = finish;
+                                }
+                                if (estimate != null) {
+                                    task_estimate = estimate;
+                                }
+                                if (owner != null) {
+                                    task_owner = owner;
+                                }
+                                if (tags != null) {
+                                    task_tags = tags;
+                                }
 
-                            process_task(event, context, task_title, task_description, task_finish, task_estimate,
-                                    task_owner, task_tags, function(task_body) {
-                                        get_user_from_slack(event, context, task_body, function(task_body) {
+                                if (task_tags == null) {
+                                    task_tags = "";
+                                }
+                                if (task_tags != "") {
+                                    task_tags += "";
+                                }
+                                task_tags += "addbatch:" + filename;
+
+                                process_task(event, context, task_title, task_description, task_finish, task_estimate,
+                                        task_owner, task_tags, function(task_body) {
                                             request({
                                                 url: "/tasks",
                                                 baseUrl: api_endpoint,
@@ -551,20 +566,23 @@ add = function(event, context, argv) {
                                                     output_results(success_result, failure_result);
                                                 }
                                             });
+                                        }, function(error_message) {
+                                            running_queue--;
+                                            failure_result.push({
+                                                line: line_index,
+                                                error: error_message
+                                            });
+                                            if (running_queue == 0) {
+                                                output_results(success_result, failure_result);
+                                            }
                                         });
-                                    }, function(error_message) {
-                                        running_queue--;
-                                        failure_result.push({
-                                            line: line_index,
-                                            error: error_message
-                                        });
-                                        if (running_queue == 0) {
-                                            output_results(success_result, failure_result);
-                                        }
-                                    });
-                        }) (columns, line_index);
+                            }) (columns, line_index);
+                        }
+                        if (running_queue == 0) {
+                            output_results(success_result, failure_result);
+                        }
                     }
-                }
+                });
             });
         }
     }
@@ -671,289 +689,208 @@ update = function(event, context, argv) {
                         });
                     });
         } else {
-            request(batch, function(err, resp, body) {
-                if (err) {
-                    console.log("Failed to get URL: " + batch);
-                    console.log(err);
-                    fail_message(event, context, "Failed to retrieve batch URL!");
-                } else if (resp.statusCode != 200) {
-                    console.log("Failed to get URL: " + batch);
-                    console.log(resp);
-                    console.log(body);
-                    fail_message(event, context, "Failed to retrieve batch URL!");
-                } else {
-                    var parts = batch.split("/");
-                    var filename = parts[parts.length - 1].split("?")[0];
+            get_user_from_slack(event, context, task_body, function(task_body) {
+                request(batch, function(err, resp, body) {
+                    if (err) {
+                        console.log("Failed to get URL: " + batch);
+                        console.log(err);
+                        fail_message(event, context, "Failed to retrieve batch URL!");
+                    } else if (resp.statusCode != 200) {
+                        console.log("Failed to get URL: " + batch);
+                        console.log(resp);
+                        console.log(body);
+                        fail_message(event, context, "Failed to retrieve batch URL!");
+                    } else {
+                        var parts = batch.split("/");
+                        var filename = parts[parts.length - 1].split("?")[0];
 
-                    output_results = function(success_result, failure_result) {
-                        var result = success_result.length + " tasks updated successfully. " + failure_result.length + " tasks failed to be updated\n";
-                        if (success_result.length > 0) {
-                            result += "Successfully updated tasks:\n```\n";
-                            var max_task_id = 7;
-                            var max_title = 5;
-                            for (var success_index = 0; success_index < success_result.length; success_index++) {
-                                if (max_task_id < success_result[success_index].task_id.toString().length) {
-                                    max_task_id = success_result[success_index].task_id.toString().length;
-                                }
-                                if (max_title < success_result[success_index].title.length) {
-                                    max_title = success_result[success_index].title.length;
-                                }
-                            }
-                            if (max_title > 30) {
-                                max_title = 30;
+                        output_results = function(success_result, failure_result) {
+                            var result = success_result.length + " tasks updated successfully. " + failure_result.length + " tasks failed to be updated\n";
+                            if (success_result.length > 0) {
+                                result += "Successfully updated tasks:\n";
+                                result += add_success_result(success_result);
                             }
 
-                            var title_border = "+";
-                            var title_vert = "|";
-                            var task_title = "Task ID";
-                            var title_title = "Title";
-                            for (var index = 0; index < max_task_id + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < task_title.length) {
-                                    title_vert += task_title[index - 1];
-                                } else {
-                                    title_vert += " ";
+                            if (failure_result.length > 0) {
+                                result += "Failed tasks:\n```\n";
+                                var title_border = "+";
+                                var title_vert = "|";
+                                var task_title = "Task ID";
+                                var title_title = "Title";
+                                var error_title = "Error";
+
+                                var max_task_id = 7;
+                                var max_title = 5;
+                                var max_error = 5;
+                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                                    if (max_task_id < failure_result[failure_index].task_id.toString().length) {
+                                        max_task_id = failure_result[failure_index].task_id.toString().length;
+                                    }
+                                    if (max_title < failure_result[failure_index].title.length) {
+                                        max_title = failure_result[failure_index].title.length;
+                                    }
+                                    if (max_error < failure_result[failure_index].error.length) {
+                                        max_error = failure_result[failure_index].error.length;
+                                    }
                                 }
+                                if (max_title > 30) {
+                                    max_title = 30;
+                                }
+
+                                for (var index = 0; index < max_task_id + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < task_title.length) {
+                                        title_vert += task_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+
+                                title_border += "+";
+                                title_vert += "|";
+
+                                for (var index = 0; index < max_title + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < title_title.length) {
+                                        title_vert += title_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+
+                                title_vert += "|";
+                                title_border += "+";
+
+                                for (var index = 0; index < max_error + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < error_title.length) {
+                                        title_vert += error_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+                                title_vert += "|";
+                                title_border += "+";
+
+                                result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                                    result += "| ";
+                                    var task_id = failure_result[failure_index].task_id.toString();
+                                    result += task_id;
+                                    for (var index = 1 + task_id.length; index < max_task_id + 2; index++) {
+                                        result += " ";
+                                    }
+                                    result += "| ";
+                                    var title = failure_result[failure_index].title;
+                                    if (title.length > 30) {
+                                        title = title.substring(0, 27) + "...";
+                                    }
+                                    result += title;
+                                    for (var index = 1 + title.length; index < max_title + 2; index++) {
+                                        result += " ";
+                                    }
+                                    result += "| ";
+                                    var error = failure_result[failure_index].error;
+                                    result += error;
+                                    for (var index = 1 + error.length; index < max_error + 2; index++) {
+                                        result += " ";
+                                    }
+                                    result += "|\n";
+                                }
+                                result += title_border + "\n";
+
+                                result += "```\n";
                             }
 
-                            title_border += "+";
-                            title_vert += "|";
+                            output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+                        };
 
-                            for (var index = 0; index < max_title + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < title_title.length) {
-                                    title_vert += title_title[index - 1];
-                                } else {
-                                    title_vert += " ";
-                                }
-                            }
-                            title_vert += "|";
-                            title_border += "+";
-                            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+                        var success_result = [];
+                        var failure_result = [];
 
-                            for (var success_index = 0; success_index < success_result.length; success_index++) {
-                                result += "| ";
-                                var task_id = success_result[success_index].task_id.toString();
-                                result += task_id;
-                                for (var index = 1 + task_id.length; index < max_task_id + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "| ";
-                                var title = success_result[success_index].title;
-                                if (title.length > 30) {
-                                    title = title.substring(0, 27) + "...";
-                                }
-                                result += title;
-                                for (var index = 1 + title.length; index < max_title + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "|\n";
-                            }
-                            result += title_border + "\n";
-                            result += "```\n";
-                        }
+                        var column_map = {
+                            id: -1,
+                            title: -1,
+                            description: -1,
+                            finish: -1,
+                            estimate: -1,
+                            owner: -1,
+                            tags: -1
+                        };
 
-                        if (failure_result.length > 0) {
-                            result += "Failed tasks:\n```\n";
-                            var title_border = "+";
-                            var title_vert = "|";
-                            var task_title = "Task ID";
-                            var title_title = "Title";
-                            var error_title = "Error";
-
-                            var max_task_id = 7;
-                            var max_title = 5;
-                            var max_error = 5;
-                            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
-                                if (max_task_id < failure_result[failure_index].task_id.toString().length) {
-                                    max_task_id = failure_result[failure_index].task_id.toString().length;
-                                }
-                                if (max_title < failure_result[failure_index].title.length) {
-                                    max_title = failure_result[failure_index].title.length;
-                                }
-                                if (max_error < failure_result[failure_index].error.length) {
-                                    max_error = failure_result[failure_index].error.length;
-                                }
-                            }
-                            if (max_title > 30) {
-                                max_title = 30;
-                            }
-
-                            for (var index = 0; index < max_task_id + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < task_title.length) {
-                                    title_vert += task_title[index - 1];
-                                } else {
-                                    title_vert += " ";
-                                }
-                            }
-
-                            title_border += "+";
-                            title_vert += "|";
-
-                            for (var index = 0; index < max_title + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < title_title.length) {
-                                    title_vert += title_title[index - 1];
-                                } else {
-                                    title_vert += " ";
-                                }
-                            }
-
-                            title_vert += "|";
-                            title_border += "+";
-
-                            for (var index = 0; index < max_error + 2; index++) {
-                                title_border += "-";
-                                if (index - 1 >= 0 && index - 1 < error_title.length) {
-                                    title_vert += error_title[index - 1];
-                                } else {
-                                    title_vert += " ";
-                                }
-                            }
-                            title_vert += "|";
-                            title_border += "+";
-
-                            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
-
-                            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
-                                result += "| ";
-                                var task_id = failure_result[failure_index].task_id.toString();
-                                result += task_id;
-                                for (var index = 1 + task_id.length; index < max_task_id + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "| ";
-                                var title = failure_result[failure_index].title;
-                                if (title.length > 30) {
-                                    title = title.substring(0, 27) + "...";
-                                }
-                                result += title;
-                                for (var index = 1 + title.length; index < max_title + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "| ";
-                                var error = failure_result[failure_index].error;
-                                result += error;
-                                for (var index = 1 + error.length; index < max_error + 2; index++) {
-                                    result += " ";
-                                }
-                                result += "|\n";
-                            }
-                            result += title_border + "\n";
-
-                            result += "```\n";
-                        }
-
-                        output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
-                    };
-
-                    var success_result = [];
-                    var failure_result = [];
-
-                    var column_map = {
-                        id: -1,
-                        title: -1,
-                        description: -1,
-                        finish: -1,
-                        estimate: -1,
-                        owner: -1,
-                        tags: -1
-                    };
-
-                    var lines = body.split("\n");
-                    var column_names = lines[0].split(",");
-                    for (var column_index = 0; column_index < column_names.length; column_index++) {
-                        var column_name = column_names[column_index];
-                        if (column_map[column_name] == -1) {
-                            column_map[column_name] = column_index;
-                        }
-                    }
-
-                    var running_queue = 0;
-                    for (var line_index = 1; line_index < lines.length; line_index++) {
-                        var columns = [];
-                        var curr_line = lines[line_index];
-                        for (var char_index = 0; char_index < curr_line.length;) {
-                            var curr_column = "";
-                            var expect_quotes = false;
-                            if (curr_line[char_index] == '"') {
-                                char_index++;
-                                expect_quotes = true;
-                            }
-                            while ((!expect_quotes && curr_line[char_index] != ",") || (expect_quotes && curr_line[char_index] != '"')) {
-                                curr_column += curr_line[char_index];
-                                char_index++;
-                                if (char_index == curr_line.length) {
-                                    break;
-                                }
-                            }
-                            columns.push(curr_column.trim());
-                            char_index++;
-                            if (expect_quotes) {
-                                char_index++;
+                        var lines = body.split("\n");
+                        var column_names = lines[0].split(",");
+                        for (var column_index = 0; column_index < column_names.length; column_index++) {
+                            var column_name = column_names[column_index];
+                            if (column_map[column_name] == -1) {
+                                column_map[column_name] = column_index;
                             }
                         }
 
-                        running_queue++;
-                        (function(columns, line_index) {
-                            var task_id = null;
-                            var task_title = null, task_description = null, task_finish = null, task_estimate = null;
-                            var task_owner = null, task_tags = null;
-                            if (column_map.id != -1) {
-                                task_id = columns[column_map.id];
-                            }
-                            if (column_map.title != -1) {
-                                task_title = columns[column_map.title];
-                            }
-                            if (column_map.description != -1) {
-                                task_description = columns[column_map.description];
-                            }
-                            if (column_map.finish != -1) {
-                                task_finish = columns[column_map.finish];
-                            }
-                            if (column_map.estimate != -1) {
-                                task_estimate = columns[column_map.estimate];
-                            }
-                            if (column_map.owner != -1) {
-                                task_owner = columns[column_map.owner];
-                            }
-                            if (column_map.tags != -1) {
-                                task_tags = columns[column_map.tags];
-                            }
-                            if (id != null) {
-                                task_id = id;
-                            }
-                            if (title != null) {
-                                task_title = title;
-                            }
-                            if (description != null) {
-                                task_description = description;
-                            }
-                            if (finish != null) {
-                                task_finish = finish;
-                            }
-                            if (estimate != null) {
-                                task_estimate = estimate;
-                            }
-                            if (owner != null) {
-                                task_owner = owner;
-                            }
-                            if (tags != null) {
-                                task_tags = tags;
-                            }
+                        var running_queue = 0;
+                        for (var line_index = 1; line_index < lines.length; line_index++) {
+                            var curr_line = lines[line_index];
+                            var columns = parse_csv_line(curr_line);
 
-                            if (task_tags == null) {
-                                task_tags = "";
-                            }
-                            if (task_tags != "") {
-                                task_tags += "";
-                            }
-                            task_tags += "updatebatch:" + filename;
+                            running_queue++;
+                            (function(columns, line_index) {
+                                var task_id = null;
+                                var task_title = null, task_description = null, task_finish = null, task_estimate = null;
+                                var task_owner = null, task_tags = null;
+                                if (column_map.id != -1) {
+                                    task_id = columns[column_map.id];
+                                }
+                                if (column_map.title != -1) {
+                                    task_title = columns[column_map.title];
+                                }
+                                if (column_map.description != -1) {
+                                    task_description = columns[column_map.description];
+                                }
+                                if (column_map.finish != -1) {
+                                    task_finish = columns[column_map.finish];
+                                }
+                                if (column_map.estimate != -1) {
+                                    task_estimate = columns[column_map.estimate];
+                                }
+                                if (column_map.owner != -1) {
+                                    task_owner = columns[column_map.owner];
+                                }
+                                if (column_map.tags != -1) {
+                                    task_tags = columns[column_map.tags];
+                                }
+                                if (id != null) {
+                                    task_id = id;
+                                }
+                                if (title != null) {
+                                    task_title = title;
+                                }
+                                if (description != null) {
+                                    task_description = description;
+                                }
+                                if (finish != null) {
+                                    task_finish = finish;
+                                }
+                                if (estimate != null) {
+                                    task_estimate = estimate;
+                                }
+                                if (owner != null) {
+                                    task_owner = owner;
+                                }
+                                if (tags != null) {
+                                    task_tags = tags;
+                                }
 
-                            process_task(event, context, task_title, task_description, task_finish, task_estimate,
-                                    task_owner, task_tags, function(task_body) {
-                                        get_user_from_slack(event, context, task_body, function(task_body) {
+                                if (task_tags == null) {
+                                    task_tags = "";
+                                }
+                                if (task_tags != "") {
+                                    task_tags += "";
+                                }
+                                task_tags += "updatebatch:" + filename;
+
+                                process_task(event, context, task_title, task_description, task_finish, task_estimate,
+                                        task_owner, task_tags, function(task_body) {
                                             request({
                                                 url: "/tasks/" + task_id,
                                                 baseUrl: api_endpoint,
@@ -997,20 +934,23 @@ update = function(event, context, argv) {
                                                     output_results(success_result, failure_result);
                                                 }
                                             });
+                                        }, function(error_message) {
+                                            running_queue--;
+                                            failure_result.push({
+                                                line: line_index,
+                                                error: error_message
+                                            });
+                                            if (running_queue == 0) {
+                                                output_results(success_result, failure_result);
+                                            }
                                         });
-                                    }, function(error_message) {
-                                        running_queue--;
-                                        failure_result.push({
-                                            line: line_index,
-                                            error: error_message
-                                        });
-                                        if (running_queue == 0) {
-                                            output_results(success_result, failure_result);
-                                        }
-                                    });
-                        }) (columns, line_index);
+                            }) (columns, line_index);
+                        }
+                        if (running_queue == 0) {
+                            output_results(success_result, failure_result);
+                        }
                     }
-                }
+                });
             });
         }
     }
@@ -1044,36 +984,239 @@ task_delete = function(event, context, argv) {
     }
 
     if (!has_errors) {
-        get_user_from_slack(event, context, {}, function(task_body) {
-            request({
-                url: "/tasks/" + id + "?current_user=" + encodeURIComponent(task_body.current_user),
-                baseUrl: api_endpoint,
-                method: "DELETE",
-                json: true
-            }, function(err, resp, body) {
-                if (err) {
-                    console.log("Failed to delete to /tasks");
-                    console.log(err);
-                    fail_message(event, context, "Oops... something went wrong!");
-                } else if (resp.statusCode != 200) {
-                    console.log("Failed to delete to /tasks");
-                    console.log(resp);
-                    console.log(body);
-                    fail_message(event, context, "Oops... something went wrong!");
-                } else {
-                    console.log(body);
-                    if (body && body.errorMessage != undefined) {
-                        output(event, context, {text: body.errorMessage});
+        if (batch == null) {
+            get_user_from_slack(event, context, {}, function(task_body) {
+                request({
+                    url: "/tasks/" + id + "?current_user=" + encodeURIComponent(task_body.current_user),
+                    baseUrl: api_endpoint,
+                    method: "DELETE",
+                    json: true
+                }, function(err, resp, body) {
+                    if (err) {
+                        console.log("Failed to delete to /tasks");
+                        console.log(err);
+                        fail_message(event, context, "Oops... something went wrong!");
+                    } else if (resp.statusCode != 200) {
+                        console.log("Failed to delete to /tasks");
+                        console.log(resp);
+                        console.log(body);
+                        fail_message(event, context, "Oops... something went wrong!");
                     } else {
-                        output(event, context, {text: "Task " + id + " deleted!"});
+                        console.log(body);
+                        if (body && body.errorMessage != undefined) {
+                            output(event, context, {text: body.errorMessage});
+                        } else {
+                            output(event, context, {text: "Task " + id + " deleted!"});
+                        }
                     }
-                }
+                });
             });
-        });
+        } else {
+            get_user_from_slack(event, context, {}, function(task_body) {
+                request(batch, function(err, resp, body) {
+                    if (err) {
+                        console.log("Failed to get URL: " + batch);
+                        console.log(err);
+                        fail_message(event, context, "Failed to retrieve batch URL!");
+                    } else if (resp.statusCode != 200) {
+                        console.log("Failed to get URL: " + batch);
+                        console.log(resp);
+                        console.log(body);
+                        fail_message(event, context, "Failed to retrieve batch URL!");
+                    } else {
+                        var parts = batch.split("/");
+                        var filename = parts[parts.length - 1].split("?")[0];
+
+                        output_results = function(success_result, failure_result) {
+                            var result = success_result.length + " tasks deleted. " + failure_result.length + " tasks weren't deleted\n";
+                            if (success_result.length > 0) {
+                                result += "Deleted tasks:\n";
+                                var title_border = "+";
+                                var title_vert = "|";
+                                var task_title = "Task ID";
+
+                                var max_task_id = 7;
+                                for (var success_index = 0; success_index < success_result.length; success_index++) {
+                                    if (max_task_id < success_result[success_index].task_id.toString().length) {
+                                        max_task_id = success_result[success_index].task_id.toString().length;
+                                    }
+                                }
+
+                                for (var index = 0; index < max_task_id + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < task_title.length) {
+                                        title_vert += task_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+
+                                title_border += "+";
+                                title_vert += "|";
+
+                                result += title_border + "\n" + title_vert + "\n" + title_border;
+
+                                for (var success_index = 0; success_index < success_result.length; success_index++) {
+                                    result += "| ";
+                                    var task_id = success_result[success_index].task_id.toString();
+                                    for (var index = 0; index < (max_task_id - task_id.length); index++) {
+                                        result += " ";
+                                    }
+                                    result += task_id + " |\n";
+                                }
+                                result += title_border + "\n";
+                                result += "```\n";
+                            }
+
+                            if (failure_result.length > 0) {
+                                result += "Failed tasks:\n```\n";
+                                var title_border = "+";
+                                var title_vert = "|";
+                                var task_title = "Task ID";
+                                var error_title = "Error";
+
+                                var max_task_id = 7;
+                                var max_error = 5;
+                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                                    if (max_task_id < failure_result[failure_index].task_id.toString().length) {
+                                        max_task_id = failure_result[failure_index].task_id.toString().length;
+                                    }
+                                    if (max_error < failure_result[failure_index].error.length) {
+                                        max_error = failure_result[failure_index].error.length;
+                                    }
+                                }
+
+                                for (var index = 0; index < max_task_id + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < task_title.length) {
+                                        title_vert += task_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+
+                                title_border += "+";
+                                title_vert += "|";
+
+                                for (var index = 0; index < max_error + 2; index++) {
+                                    title_border += "-";
+                                    if (index - 1 >= 0 && index - 1 < error_title.length) {
+                                        title_vert += error_title[index - 1];
+                                    } else {
+                                        title_vert += " ";
+                                    }
+                                }
+                                title_vert += "|";
+                                title_border += "+";
+
+                                result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                                    result += "| ";
+                                    var task_id = failure_result[failure_index].task_id.toString();
+                                    for (var index = 0; index < (max_task_id - task_id.length); index++) {
+                                        result += " ";
+                                    }
+                                    result += task_id;
+                                    result += " | ";
+                                    var error = failure_result[failure_index].error;
+                                    result += error;
+                                    for (var index = 1 + error.length; index < max_error + 2; index++) {
+                                        result += " ";
+                                    }
+                                    result += "|\n";
+                                }
+                                result += title_border + "\n";
+
+                                result += "```\n";
+                            }
+
+                            output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+                        }
+
+                        var success_result = [];
+                        var failure_result = [];
+
+                        var column_map = {
+                            id: -1
+                        };
+
+                        var lines = body.split("\n");
+                        var column_names = lines[0].split(",");
+                        for (var column_index = 0; column_index < column_names.length; column_index++) {
+                            var column_name = column_names[column_index];
+                            if (column_map[column_name] == -1) {
+                                column_map[column_name] = column_index;
+                            }
+                        }
+
+                        var running_queue = 0;
+                        for (var line_index = 1; line_index < lines.length; line_index++) {
+                            var curr_line = lines[line_index];
+                            var columns = parse_csv_line(curr_line);
+
+                            running_queue++;
+                            (function(columns, line_index) {
+                                var task_id = null;
+                                if (column_map.id != -1) {
+                                    task_id = columns[column_map.id];
+                                }
+                                request({
+                                    url: "/tasks/" + task_id + "?current_user=" + encodeURIComponent(task_body.current_user),
+                                    baseUrl: api_endpoint,
+                                    method: "DELETE",
+                                    json: true
+                                }, function(err, resp, body) {
+                                    running_queue--;
+                                    if (err) {
+                                        console.log("Failed to delete to /tasks/"+task_id);
+                                        console.log(err);
+                                        failure_result.push({
+                                            line: line_index,
+                                            task_id: task_id,
+                                            error: "Failed to connect to task manager API service"
+                                        });
+                                    } else if (resp.statusCode != 200) {
+                                        console.log("Failed to delete to /tasks/"+task_id);
+                                        console.log(resp);
+                                        console.log(body);
+                                        failure_result.push({
+                                            line: line_index,
+                                            task_id: task_id,
+                                            error: "Task manager service returned error"
+                                        });
+                                    } else {
+                                        if (body && body.errorMessage != undefined) {
+                                            failure_result.push({
+                                                task_id: task_id,
+                                                line: line_index,
+                                                error: body.errorMessage
+                                            });
+                                        } else {
+                                            success_result.push({
+                                                task_id: task_id,
+                                                line: line_index
+                                            });
+                                        }
+                                    }
+
+                                    if (running_queue == 0) {
+                                        output_results(success_result, failure_result);
+                                    }
+                                });
+                            })(columns, line_index);
+                        }
+                        if (running_queue == 0) {
+                            output_results(success_result, failure_result);
+                        }
+                    }
+                });
+            });
+        }
     }
 }
 
-format_task_output = function(task, users_info) {
+format_task_output = function(task, users_info, show_long) {
     for (var member_index = 0; member_index < users_info.members.length; member_index++) {
         var member = users_info.members[member_index];
         if (member.profile.email == task.owner) {
@@ -1108,57 +1251,59 @@ format_task_output = function(task, users_info) {
         ]
     };
 
-    if (task.estimate != undefined && task.estimate != "") {
-        result.fields.push({
-            title: "Estimate",
-            value: task.estimate,
-            short: true
-        });
-    }
+    if (show_long) {
+        if (task.estimate != undefined && task.estimate != "") {
+            result.fields.push({
+                title: "Estimate",
+                value: task.estimate,
+                short: true
+            });
+        }
 
-    if (task._worked_by != undefined) {
-        for (var member_index = 0; member_index < users_info.members.length; member_index++) {
-            var member = users_info.members[member_index];
-            if (member.profile.email == task._worked_by) {
-                task._worked_by = member.name;
-                break;
+        if (task._worked_by != undefined) {
+            for (var member_index = 0; member_index < users_info.members.length; member_index++) {
+                var member = users_info.members[member_index];
+                if (member.profile.email == task._worked_by) {
+                    task._worked_by = member.name;
+                    break;
+                }
+            }
+            result.fields.push({
+                title: "Worked by",
+                value: task._worked_by,
+                short: true
+            });
+            result.fields.push({
+                title: "Worked on",
+                value: task._worked_on,
+                short: true
+            });
+            result.fields.push({
+                title: "Work Status",
+                value: task._work_status,
+                short: true
+            });
+
+            if (task._completion_status != undefined) {
+                result.fields.push({
+                    title: "Completion Status",
+                    value: task._completion_status,
+                    short: true
+                });
+                result.fields.push({
+                    title: "Completed On",
+                    value: task._completed_on,
+                    short: true
+                });
             }
         }
-        result.fields.push({
-            title: "Worked by",
-            value: task._worked_by,
-            short: true
-        });
-        result.fields.push({
-            title: "Worked on",
-            value: task._worked_on,
-            short: true
-        });
-        result.fields.push({
-            title: "Work Status",
-            value: task._work_status,
-            short: true
-        });
 
-        if (task._completion_status != undefined) {
+        if (task._tags != undefined && task._tags != "") {
             result.fields.push({
-                title: "Completion Status",
-                value: task._completion_status,
-                short: true
-            });
-            result.fields.push({
-                title: "Completed On",
-                value: task._completed_on,
-                short: true
+                title: "Tags",
+                value: task._tags
             });
         }
-    }
-
-    if (task._tags != undefined && task._tags != "") {
-        result.fields.push({
-            title: "Tags",
-            value: task._tags
-        });
     }
 
     return result;
@@ -1203,13 +1348,17 @@ list = function(event, context, argv) {
         }
     }
 
-    post_to_api = function(queries, users_info) {
+    post_to_api = function(queries, users_info, queue) {
         var query_string = "";
         if (queries.length > 0) {
             query_string = "?" + queries.join("&");
         }
+        var url = "/tasks";
+        if (queue) {
+            url += "/available";
+        }
         request({
-            url: "/tasks" + query_string,
+            url: url + query_string,
             baseUrl: api_endpoint,
             method: "GET",
             json: true
@@ -1231,7 +1380,7 @@ list = function(event, context, argv) {
                     var attachments = [];
                     for (var task_index = 0; task_index < body.length; task_index++) {
                         var task = body[task_index];
-                        attachments.push(format_task_output(task, users_info));
+                        attachments.push(format_task_output(task, users_info, show_long));
                     }
                     output(event, context, {attachments: attachments, response_type: "in_channel"});
                 }
@@ -1253,17 +1402,18 @@ list = function(event, context, argv) {
         if (owner != null) {
             parse_owner(owner, {}, function(task_body, users_info) {
                 queries.push("owner=" + encodeURIComponent(task_body.owner));
-                post_to_api(queries, users_info);
+                post_to_api(queries, users_info, queue);
             });
         } else {
             retrieve_owner(function(users_info) {
-                post_to_api(queries, users_info);
+                post_to_api(queries, users_info, queue);
             });
         }
     }
 }
 
 show = function(event, context, argv) {
+    // TODO: Implement history
     var id = null, show_long = false, history = false;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
@@ -1315,7 +1465,10 @@ show = function(event, context, argv) {
                         } else {
                             var task = body;
                             retrieve_owner(function(users_info) {
-                                output(event, context, {attachments: [format_task_output(task, users_info)], response_type: "in_channel"});
+                                output(event, context, {
+                                    attachments: [format_task_output(task, users_info, show_long)],
+                                    response_type: "in_channel"
+                                });
                             });
                         }
                     }
@@ -1372,7 +1525,10 @@ peek = function(event, context, argv) {
                                 output(event, context, {text: task._id});
                             } else {
                                 retrieve_owner(function(users_info) {
-                                    output(event, context, {attachments: [format_task_output(task, users_info)], response_type: "in_channel"});
+                                    output(event, context, {
+                                        attachments: [format_task_output(task, users_info, show_long)],
+                                        response_type: "in_channel"
+                                    });
                                 });
                             }
                         }
@@ -1424,7 +1580,10 @@ grab = function(event, context, argv) {
                 } else {
                     var task = body;
                     retrieve_owner(function(users_info) {
-                        output(event, context, {attachments: [format_task_output(task, users_info)], response_type: "in_channel"});
+                        output(event, context, {
+                            attachments: [format_task_output(task, users_info, true)],
+                            response_type: "in_channel"
+                        });
                     });
                 }
             }
