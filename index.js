@@ -6,9 +6,9 @@ var slack_token = "";
 
 var time_start = 0;
 
-output = function(event, context, message) {
+output = function(event, context, message, dont_set_done) {
     var duration = (new Date()).getTime() - time_start;
-    if (duration >= 2500) {
+    if (duration >= 2500 || dont_set_done) {
         request({
             url: event.response_url,
             method: "POST",
@@ -23,7 +23,9 @@ output = function(event, context, message) {
                 console.log(resp);
                 console.log(body);
             }
-            context.done();
+            if (!dont_set_done || dont_set_done == undefined) {
+                context.done();
+            }
         });
     } else {
         context.succeed(message);
@@ -1468,7 +1470,125 @@ show = function(event, context, argv) {
                                 output(event, context, {
                                     attachments: [format_task_output(task, users_info, show_long)],
                                     response_type: "in_channel"
-                                });
+                                }, history);
+                                if (history) {
+                                    request({
+                                        url: "/tasks/" + id + "/history?current_user=" + encodeURIComponent(task_body.current_user),
+                                        baseUrl: api_endpoint,
+                                        method: "GET",
+                                        json: true
+                                    }, function(err, resp, body) {
+                                        if (err) {
+                                            console.log("Failed to retrieve history");
+                                            console.log(err);
+                                            fail_message(event, context, "Oops... something went wrong!");
+                                        } else if (resp.statusCode != 200) {
+                                            console.log("Failed to retrieve history");
+                                            console.log(resp);
+                                            console.log(body);
+                                            fail_message(event, context, "Oops... something went wrong!");
+                                        } else {
+                                            retrieve_owner(function(users_info) {
+                                                var users_list = {};
+                                                for (var member_index = 0; member_index < users_info.members.length; member_index++) {
+                                                    var member = users_info.members[member_index];
+                                                    users_list[member.profile.email] = member.name;
+                                                }
+
+                                                var events = body.events;
+
+                                                var result = "History:\n```\n";
+
+                                                var title_border = "+";
+                                                var title_vert = "|";
+                                                var date_title = "Date";
+                                                var user_title = "User";
+                                                var action_title = "Action";
+
+                                                var max_date = 4;
+                                                var max_user = 4;
+                                                var max_action = 6;
+                                                for (var event_index = 0; event_index < events.length; event_index++) {
+                                                    if (max_date < events[event_index].when.length) {
+                                                        max_date = events[event_index].when.length;
+                                                    }
+                                                    events[event_index].who = users_list[events[event_index].who];
+                                                    if (max_user < events[event_index].who.length) {
+                                                        max_user = events[event_index].who.length;
+                                                    }
+                                                    if (max_action < events[event_index].what.length) {
+                                                        max_action = events[event_index].what.length;
+                                                    }
+                                                }
+
+                                                for (var index = 0; index < max_date + 2; index++) {
+                                                    title_border += "-";
+                                                    if (index - 1 >= 0 && index -1 < date_title.length) {
+                                                        title_vert += date_title[index - 1];
+                                                    } else {
+                                                        title_vert += " ";
+                                                    }
+                                                }
+
+                                                title_border += "+";
+                                                title_vert += "|";
+
+                                                for (var index = 0; index < max_user + 2; index++) {
+                                                    title_border += "-";
+                                                    if (index - 1 >= 0 && index -1 < user_title.length) {
+                                                        title_vert += user_title[index - 1];
+                                                    } else {
+                                                        title_vert += " ";
+                                                    }
+                                                }
+
+                                                title_border += "+";
+                                                title_vert += "|";
+
+                                                for (var index = 0; index < max_action + 2; index++) {
+                                                    title_border += "-";
+                                                    if (index - 1 >= 0 && index -1 < action_title.length) {
+                                                        title_vert += action_title[index - 1];
+                                                    } else {
+                                                        title_vert += " ";
+                                                    }
+                                                }
+
+                                                title_border += "+";
+                                                title_vert += "|";
+
+                                                result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+                                                for (var event_index = 0; event_index < events.length; event_index++) {
+                                                    result += "| ";
+                                                    var date = events[event_index].when;
+                                                    result += date;
+                                                    for (var index = 1 + date.length; index < max_date + 2; index++) {
+                                                        result += " ";
+                                                    }
+                                                    result += "| ";
+                                                    var who = events[event_index].who;
+                                                    result += who;
+                                                    for (var index = 1 + who.length; index < max_user + 2; index++) {
+                                                        result += " ";
+                                                    }
+                                                    result += "| ";
+                                                    var what = events[event_index].what;
+                                                    result += what;
+                                                    for (var index = 1 + what.length; index < max_action + 2; index++) {
+                                                        result += " ";
+                                                    }
+                                                    result += "|\n";
+                                                }
+
+                                                result += title_border + "\n";
+                                                result += "```\n";
+
+                                                output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+                                            });
+                                        }
+                                    });
+                                }
                             });
                         }
                     }
@@ -1595,6 +1715,7 @@ task_status = function(event, context, argv) {
     var task_id = null;
     var new_status = argv[0];
     var has_errors = false;
+    var is_done = false;
 
     if (argv[0] == "done") {
         if (argv.length > 1) {
@@ -1609,6 +1730,7 @@ task_status = function(event, context, argv) {
         } else {
             new_status = "complete-success";
         }
+        is_done = true;
     } else {
         if (argv.length > 1) {
             task_id = parseInt(argv[1]);
@@ -1650,6 +1772,7 @@ task_status = function(event, context, argv) {
                     if (body && body.errorMessage != undefined) {
                         output(event, context, {text: body.errorMessage});
                     } else {
+                        // TODO: Output detailed stats for done
                         output(event, context, {text: body});
                     }
                 }
