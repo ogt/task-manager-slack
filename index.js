@@ -1878,5 +1878,21 @@ exports.handler = function(event, context) {
         case "done":
             task_status(event, context, argv);
             break;
+        case "man":
+            output(event, context, {
+                text: "```\nadd      - Adds task(s) in the queue\n" +
+                    "update   - Update existing task - only possible while the task sits\n" +
+                    "delete   - Deletes task(s) from the queue\n" +
+                    "list     - Lists all tasks in the queue\n" +
+                    "show     - Shows info and statsabout a specific task\n" +
+                    "peek     - Shows you the next task that should be grabbed\n" +
+                    "grab     - Take a task from the queue, making it the current task. If you were already working on a task suspend it\n" +
+                    "release  - Puts task back to the queue without doing it\n" +
+                    "bg       - Suspends a currently active task\n" +
+                    "fg       - Activates a suspended task\n" +
+                    "done     - Mark the current task as completed\n```\n",
+                mrkdwn: true
+            });
+            break;
     }
 }
