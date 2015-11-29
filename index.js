@@ -2296,7 +2296,9 @@ exports.handler = function(event, context) {
                     "release  - Puts task back to the queue without doing it\n" +
                     "bg       - Suspends a currently active task\n" +
                     "fg       - Activates a suspended task\n" +
-                    "done     - Mark the current task as completed\n```\n",
+                    "done     - Mark the current task as completed\n" +
+                    "purge    - Completely removes deleted or completed task\n" +
+                    "man      - Shows this page\n```\n",
                 mrkdwn: true
             });
             break;
