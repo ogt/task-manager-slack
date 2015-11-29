@@ -1,5 +1,6 @@
 var request = require("request");
 var chrono = require("chrono-node");
+var moment = require("moment");
 
 var api_endpoint = "";
 var slack_token = "";
@@ -8,7 +9,7 @@ var time_start = 0;
 
 output = function(event, context, message, dont_set_done) {
     var duration = (new Date()).getTime() - time_start;
-    if (duration >= 2500 || dont_set_done) {
+    if (duration >= 1800 || dont_set_done) {
         request({
             url: event.response_url,
             method: "POST",
@@ -959,7 +960,7 @@ update = function(event, context, argv) {
 }
 
 task_delete = function(event, context, argv) {
-    var id = null, batch = null;
+    var id = null, batch = null, tag = null;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
         switch (argv[arg_index]) {
@@ -973,6 +974,11 @@ task_delete = function(event, context, argv) {
                 batch = argv[arg_index + 1];
                 arg_index++;
                 break;
+            case "-g":
+            case "--tag":
+                tag = argv[arg_index + 1];
+                arg_index++;
+                break;
             default:
                 has_errors = true;
                 fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
@@ -980,13 +986,120 @@ task_delete = function(event, context, argv) {
         }
     }
 
-    if (id == null && batch == null) {
+    if (id == null && batch == null && tag == null) {
         has_errors = true;
         fail_message(event, context, "You must specify a task ID to delete!");
     }
 
+    output_results = function(success_result, failure_result) {
+        var result = success_result.length + " tasks deleted. " + failure_result.length + " tasks weren't deleted\n";
+        if (success_result.length > 0) {
+            result += "Deleted tasks:\n```\n";
+            var title_border = "+";
+            var title_vert = "|";
+            var task_title = "Task ID";
+
+            var max_task_id = 7;
+            for (var success_index = 0; success_index < success_result.length; success_index++) {
+                if (max_task_id < success_result[success_index].task_id.toString().length) {
+                    max_task_id = success_result[success_index].task_id.toString().length;
+                }
+            }
+
+            for (var index = 0; index < max_task_id + 2; index++) {
+                title_border += "-";
+                if (index - 1 >= 0 && index - 1 < task_title.length) {
+                    title_vert += task_title[index - 1];
+                } else {
+                    title_vert += " ";
+                }
+            }
+
+            title_border += "+";
+            title_vert += "|";
+
+            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+            for (var success_index = 0; success_index < success_result.length; success_index++) {
+                result += "| ";
+                var task_id = success_result[success_index].task_id.toString();
+                for (var index = 0; index < (max_task_id - task_id.length); index++) {
+                    result += " ";
+                }
+                result += task_id + " |\n";
+            }
+            result += title_border + "\n";
+            result += "```\n";
+        }
+
+        if (failure_result.length > 0) {
+            result += "Failed tasks:\n```\n";
+            var title_border = "+";
+            var title_vert = "|";
+            var task_title = "Task ID";
+            var error_title = "Error";
+
+            var max_task_id = 7;
+            var max_error = 5;
+            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                if (max_task_id < failure_result[failure_index].task_id.toString().length) {
+                    max_task_id = failure_result[failure_index].task_id.toString().length;
+                }
+                if (max_error < failure_result[failure_index].error.length) {
+                    max_error = failure_result[failure_index].error.length;
+                }
+            }
+
+            for (var index = 0; index < max_task_id + 2; index++) {
+                title_border += "-";
+                if (index - 1 >= 0 && index - 1 < task_title.length) {
+                    title_vert += task_title[index - 1];
+                } else {
+                    title_vert += " ";
+                }
+            }
+
+            title_border += "+";
+            title_vert += "|";
+
+            for (var index = 0; index < max_error + 2; index++) {
+                title_border += "-";
+                if (index - 1 >= 0 && index - 1 < error_title.length) {
+                    title_vert += error_title[index - 1];
+                } else {
+                    title_vert += " ";
+                }
+            }
+            title_vert += "|";
+            title_border += "+";
+
+            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                result += "| ";
+                var task_id = failure_result[failure_index].task_id.toString();
+                for (var index = 0; index < (max_task_id - task_id.length); index++) {
+                    result += " ";
+                }
+                result += task_id;
+                result += " | ";
+                var error = failure_result[failure_index].error;
+                result += error;
+                for (var index = 1 + error.length; index < max_error + 2; index++) {
+                    result += " ";
+                }
+                result += "|\n";
+            }
+            result += title_border + "\n";
+
+            result += "```\n";
+        }
+
+        output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+    }
+
     if (!has_errors) {
-        if (batch == null) {
+        if (batch == null && tag == null) {
             get_user_from_slack(event, context, {}, function(task_body) {
                 request({
                     url: "/tasks/" + id + "?current_user=" + encodeURIComponent(task_body.current_user),
@@ -1014,206 +1127,182 @@ task_delete = function(event, context, argv) {
                 });
             });
         } else {
-            get_user_from_slack(event, context, {}, function(task_body) {
-                request(batch, function(err, resp, body) {
-                    if (err) {
-                        console.log("Failed to get URL: " + batch);
-                        console.log(err);
-                        fail_message(event, context, "Failed to retrieve batch URL!");
-                    } else if (resp.statusCode != 200) {
-                        console.log("Failed to get URL: " + batch);
-                        console.log(resp);
-                        console.log(body);
-                        fail_message(event, context, "Failed to retrieve batch URL!");
-                    } else {
-                        var parts = batch.split("/");
-                        var filename = parts[parts.length - 1].split("?")[0];
+            if (tag == null) {
+                get_user_from_slack(event, context, {}, function(task_body) {
+                    request(batch, function(err, resp, body) {
+                        if (err) {
+                            console.log("Failed to get URL: " + batch);
+                            console.log(err);
+                            fail_message(event, context, "Failed to retrieve batch URL!");
+                        } else if (resp.statusCode != 200) {
+                            console.log("Failed to get URL: " + batch);
+                            console.log(resp);
+                            console.log(body);
+                            fail_message(event, context, "Failed to retrieve batch URL!");
+                        } else {
+                            var parts = batch.split("/");
+                            var filename = parts[parts.length - 1].split("?")[0];
 
-                        output_results = function(success_result, failure_result) {
-                            var result = success_result.length + " tasks deleted. " + failure_result.length + " tasks weren't deleted\n";
-                            if (success_result.length > 0) {
-                                result += "Deleted tasks:\n```\n";
-                                var title_border = "+";
-                                var title_vert = "|";
-                                var task_title = "Task ID";
 
-                                var max_task_id = 7;
-                                for (var success_index = 0; success_index < success_result.length; success_index++) {
-                                    if (max_task_id < success_result[success_index].task_id.toString().length) {
-                                        max_task_id = success_result[success_index].task_id.toString().length;
-                                    }
+                            var success_result = [];
+                            var failure_result = [];
+
+                            var column_map = {
+                                id: -1
+                            };
+
+                            var lines = body.split("\n");
+                            var column_names = lines[0].split(",");
+                            for (var column_index = 0; column_index < column_names.length; column_index++) {
+                                var column_name = column_names[column_index];
+                                if (column_map[column_name] == -1) {
+                                    column_map[column_name] = column_index;
                                 }
-
-                                for (var index = 0; index < max_task_id + 2; index++) {
-                                    title_border += "-";
-                                    if (index - 1 >= 0 && index - 1 < task_title.length) {
-                                        title_vert += task_title[index - 1];
-                                    } else {
-                                        title_vert += " ";
-                                    }
-                                }
-
-                                title_border += "+";
-                                title_vert += "|";
-
-                                result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
-
-                                for (var success_index = 0; success_index < success_result.length; success_index++) {
-                                    result += "| ";
-                                    var task_id = success_result[success_index].task_id.toString();
-                                    for (var index = 0; index < (max_task_id - task_id.length); index++) {
-                                        result += " ";
-                                    }
-                                    result += task_id + " |\n";
-                                }
-                                result += title_border + "\n";
-                                result += "```\n";
                             }
 
-                            if (failure_result.length > 0) {
-                                result += "Failed tasks:\n```\n";
-                                var title_border = "+";
-                                var title_vert = "|";
-                                var task_title = "Task ID";
-                                var error_title = "Error";
+                            var running_queue = 0;
+                            for (var line_index = 1; line_index < lines.length; line_index++) {
+                                var curr_line = lines[line_index];
+                                var columns = parse_csv_line(curr_line);
 
-                                var max_task_id = 7;
-                                var max_error = 5;
-                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
-                                    if (max_task_id < failure_result[failure_index].task_id.toString().length) {
-                                        max_task_id = failure_result[failure_index].task_id.toString().length;
+                                running_queue++;
+                                (function(columns, line_index) {
+                                    var task_id = null;
+                                    if (column_map.id != -1) {
+                                        task_id = columns[column_map.id];
                                     }
-                                    if (max_error < failure_result[failure_index].error.length) {
-                                        max_error = failure_result[failure_index].error.length;
-                                    }
-                                }
-
-                                for (var index = 0; index < max_task_id + 2; index++) {
-                                    title_border += "-";
-                                    if (index - 1 >= 0 && index - 1 < task_title.length) {
-                                        title_vert += task_title[index - 1];
-                                    } else {
-                                        title_vert += " ";
-                                    }
-                                }
-
-                                title_border += "+";
-                                title_vert += "|";
-
-                                for (var index = 0; index < max_error + 2; index++) {
-                                    title_border += "-";
-                                    if (index - 1 >= 0 && index - 1 < error_title.length) {
-                                        title_vert += error_title[index - 1];
-                                    } else {
-                                        title_vert += " ";
-                                    }
-                                }
-                                title_vert += "|";
-                                title_border += "+";
-
-                                result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
-
-                                for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
-                                    result += "| ";
-                                    var task_id = failure_result[failure_index].task_id.toString();
-                                    for (var index = 0; index < (max_task_id - task_id.length); index++) {
-                                        result += " ";
-                                    }
-                                    result += task_id;
-                                    result += " | ";
-                                    var error = failure_result[failure_index].error;
-                                    result += error;
-                                    for (var index = 1 + error.length; index < max_error + 2; index++) {
-                                        result += " ";
-                                    }
-                                    result += "|\n";
-                                }
-                                result += title_border + "\n";
-
-                                result += "```\n";
-                            }
-
-                            output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
-                        }
-
-                        var success_result = [];
-                        var failure_result = [];
-
-                        var column_map = {
-                            id: -1
-                        };
-
-                        var lines = body.split("\n");
-                        var column_names = lines[0].split(",");
-                        for (var column_index = 0; column_index < column_names.length; column_index++) {
-                            var column_name = column_names[column_index];
-                            if (column_map[column_name] == -1) {
-                                column_map[column_name] = column_index;
-                            }
-                        }
-
-                        var running_queue = 0;
-                        for (var line_index = 1; line_index < lines.length; line_index++) {
-                            var curr_line = lines[line_index];
-                            var columns = parse_csv_line(curr_line);
-
-                            running_queue++;
-                            (function(columns, line_index) {
-                                var task_id = null;
-                                if (column_map.id != -1) {
-                                    task_id = columns[column_map.id];
-                                }
-                                request({
-                                    url: "/tasks/" + task_id + "?current_user=" + encodeURIComponent(task_body.current_user) + "&tag=" + encodeURIComponent("deletebatch:" + filename),
-                                    baseUrl: api_endpoint,
-                                    method: "DELETE",
-                                    json: true
-                                }, function(err, resp, body) {
-                                    running_queue--;
-                                    if (err) {
-                                        console.log("Failed to delete to /tasks/"+task_id);
-                                        console.log(err);
-                                        failure_result.push({
-                                            line: line_index,
-                                            task_id: task_id,
-                                            error: "Failed to connect to task manager API service"
-                                        });
-                                    } else if (resp.statusCode != 200) {
-                                        console.log("Failed to delete to /tasks/"+task_id);
-                                        console.log(resp);
-                                        console.log(body);
-                                        failure_result.push({
-                                            line: line_index,
-                                            task_id: task_id,
-                                            error: "Task manager service returned error"
-                                        });
-                                    } else {
-                                        if (body && body.errorMessage != undefined) {
+                                    request({
+                                        url: "/tasks/" + task_id + "?current_user=" + encodeURIComponent(task_body.current_user) + "&tag=" + encodeURIComponent("deletebatch:" + filename),
+                                        baseUrl: api_endpoint,
+                                        method: "DELETE",
+                                        json: true
+                                    }, function(err, resp, body) {
+                                        running_queue--;
+                                        if (err) {
+                                            console.log("Failed to delete to /tasks/"+task_id);
+                                            console.log(err);
                                             failure_result.push({
-                                                task_id: task_id,
                                                 line: line_index,
-                                                error: body.errorMessage
+                                                task_id: task_id,
+                                                error: "Failed to connect to task manager API service"
+                                            });
+                                        } else if (resp.statusCode != 200) {
+                                            console.log("Failed to delete to /tasks/"+task_id);
+                                            console.log(resp);
+                                            console.log(body);
+                                            failure_result.push({
+                                                line: line_index,
+                                                task_id: task_id,
+                                                error: "Task manager service returned error"
                                             });
                                         } else {
-                                            success_result.push({
-                                                task_id: task_id,
-                                                line: line_index
-                                            });
+                                            if (body && body.errorMessage != undefined) {
+                                                failure_result.push({
+                                                    task_id: task_id,
+                                                    line: line_index,
+                                                    error: body.errorMessage
+                                                });
+                                            } else {
+                                                success_result.push({
+                                                    task_id: task_id,
+                                                    line: line_index
+                                                });
+                                            }
                                         }
-                                    }
 
-                                    if (running_queue == 0) {
-                                        output_results(success_result, failure_result);
-                                    }
-                                });
-                            })(columns, line_index);
+                                        if (running_queue == 0) {
+                                            output_results(success_result, failure_result);
+                                        }
+                                    });
+                                })(columns, line_index);
+                            }
+                            if (running_queue == 0) {
+                                output_results(success_result, failure_result);
+                            }
                         }
-                        if (running_queue == 0) {
-                            output_results(success_result, failure_result);
-                        }
-                    }
+                    });
                 });
-            });
+            } else {
+                get_user_from_slack(event, context, {}, function(task_body) {
+                    request({
+                        url: "/tasks?tag=" + encodeURIComponent(tag) + "&n=9999",
+                        baseUrl: api_endpoint,
+                        method: "GET",
+                        json: true
+                    }, function(err, resp, body) {
+                        if (err) {
+                            console.log("Failed to get to /tasks");
+                            console.log(err);
+                            fail_message(event, context, "Oops... something went wrong!");
+                        } else if (resp.statusCode != 200) {
+                            console.log("Failed to get to /tasks");
+                            console.log(resp);
+                            console.log(body);
+                            fail_message(event, context, "Oops... something went wrong!");
+                        } else {
+                            if (body.errorMessage != undefined) {
+                                output(event, context, {text: body.errorMessage});
+                            } else {
+                                var success_result = [];
+                                var failure_result = [];
+                                var running_queue = 0;
+
+                                if (body.length > 0) {
+                                    for (var task_index = 0; task_index < body.length; task_index++) {
+                                        running_queue++;
+                                        (function(task) {
+                                            var task_id = task._id;
+                                            request({
+                                                url: "/tasks/" + task_id + "?current_user=" + encodeURIComponent(task_body.current_user),
+                                                baseUrl: api_endpoint,
+                                                method: "DELETE",
+                                                json: true
+                                            }, function(err, resp, body) {
+                                                running_queue--;
+                                                if (err) {
+                                                    console.log("Failed to delete to /tasks/"+task_id);
+                                                    console.log(err);
+                                                    failure_result.push({
+                                                        line: line_index,
+                                                        task_id: task_id,
+                                                        error: "Failed to connect to task manager API service"
+                                                    });
+                                                } else if (resp.statusCode != 200) {
+                                                    console.log("Failed to delete to /tasks/"+task_id);
+                                                    console.log(resp);
+                                                    console.log(body);
+                                                    failure_result.push({
+                                                        task_id: task_id,
+                                                        error: "Task manager service returned error"
+                                                    });
+                                                } else {
+                                                    if (body && body.errorMessage != undefined) {
+                                                        failure_result.push({
+                                                            task_id: task_id,
+                                                            error: body.errorMessage
+                                                        });
+                                                    } else {
+                                                        success_result.push({
+                                                            task_id: task_id,
+                                                        });
+                                                    }
+                                                }
+
+                                                if (running_queue == 0) {
+                                                    output_results(success_result, failure_result);
+                                                }
+                                            });
+                                        })(body[task_index]);
+                                    }
+                                }
+                                if (running_queue == 0) {
+                                    output_results(success_result, failure_result);
+                                }
+                            }
+                        }
+                    });
+                });
+            }
         }
     }
 }
@@ -1379,12 +1468,41 @@ list = function(event, context, argv) {
                 if (body.errorMessage != undefined) {
                     output(event, context, {text: body.errorMessage});
                 } else {
-                    var attachments = [];
-                    for (var task_index = 0; task_index < body.length; task_index++) {
-                        var task = body[task_index];
-                        attachments.push(format_task_output(task, users_info, show_long));
+                    if (show_long) {
+                        var attachments = [];
+                        for (var task_index = 0; task_index < body.length; task_index++) {
+                            var task = body[task_index];
+                            attachments.push(format_task_output(task, users_info, show_long));
+                        }
+                        output(event, context, {attachments: attachments, response_type: "in_channel"});
+                    } else {
+                        var text = "";
+                        if (body.length > 0) {
+                            var user_email_map = {};
+                            for (var member_index = 0; member_index < users_info.members.length; member_index++) {
+                                var member = users_info.members[member_index];
+                                user_email_map[member.profile.email] = member.name;
+                            }
+                            var task_statuses = {};
+                            for (var task_index = 0; task_index < body.length; task_index++) {
+                                var task = body[task_index];
+                                if (task_statuses[task.state] == undefined) {
+                                    task_statuses[task.state] = [];
+                                }
+                                task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" by " + moment(task.deadline).format("h:mm a dddd, MMMM YYYY") + ", owned by " + user_email_map[task.owner]);
+                            }
+                            for (var state in task_statuses) {
+                                if (task_statuses.hasOwnProperty(state)) {
+                                    text += state + ":\n";
+                                    text += task_statuses[state].join("\n");
+                                    text += "\n";
+                                }
+                            } 
+                        } else {
+                            text = "There's no tasks!!";
+                        }
+                        output(event, context, {text: text, mrkdwn: true});
                     }
-                    output(event, context, {attachments: attachments, response_type: "in_channel"});
                 }
             }
         });
@@ -1711,6 +1829,291 @@ grab = function(event, context, argv) {
     });
 }
 
+purge = function(event, context, argv) {
+    var id = null, state = null, owner = null, tag = null;
+    var has_errors = false;
+    for (var arg_index = 1; arg_index < argv.length; arg_index++) {
+        switch (argv[arg_index]) {
+            case "-i":
+            case "--id":
+                id = argv[arg_index + 1];
+                arg_index++;
+                break;
+            case "-s":
+            case "--state":
+                state = argv[arg_index + 1];
+                arg_index++;
+                break;
+            case "-o":
+            case "--owner":
+                owner = argv[arg_index + 1];
+                arg_index++;
+                break;
+            case "-g":
+            case "--tag":
+                tag = argv[arg_index + 1];
+                arg_index++;
+                break;
+            default:
+                has_errors = true;
+                fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
+                break;
+        }
+    }
+
+    if (id == null && owner == null) {
+        has_errors = true;
+        fail_message(event, context, "You must specify a task ID to purge!");
+    }
+
+    output_results = function(success_result, failure_result) {
+        var result = success_result.length + " tasks purged. " + failure_result.length + " tasks weren't purged\n";
+        if (success_result.length > 0) {
+            result += "Deleted tasks:\n```\n";
+            var title_border = "+";
+            var title_vert = "|";
+            var task_title = "Task ID";
+
+            var max_task_id = 7;
+            for (var success_index = 0; success_index < success_result.length; success_index++) {
+                if (max_task_id < success_result[success_index].task_id.toString().length) {
+                    max_task_id = success_result[success_index].task_id.toString().length;
+                }
+            }
+
+            for (var index = 0; index < max_task_id + 2; index++) {
+                title_border += "-";
+                if (index - 1 >= 0 && index - 1 < task_title.length) {
+                    title_vert += task_title[index - 1];
+                } else {
+                    title_vert += " ";
+                }
+            }
+
+            title_border += "+";
+            title_vert += "|";
+
+            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+            for (var success_index = 0; success_index < success_result.length; success_index++) {
+                result += "| ";
+                var task_id = success_result[success_index].task_id.toString();
+                for (var index = 0; index < (max_task_id - task_id.length); index++) {
+                    result += " ";
+                }
+                result += task_id + " |\n";
+            }
+            result += title_border + "\n";
+            result += "```\n";
+        }
+
+        if (failure_result.length > 0) {
+            result += "Failed tasks:\n```\n";
+            var title_border = "+";
+            var title_vert = "|";
+            var task_title = "Task ID";
+            var error_title = "Error";
+
+            var max_task_id = 7;
+            var max_error = 5;
+            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                if (max_task_id < failure_result[failure_index].task_id.toString().length) {
+                    max_task_id = failure_result[failure_index].task_id.toString().length;
+                }
+                if (max_error < failure_result[failure_index].error.length) {
+                    max_error = failure_result[failure_index].error.length;
+                }
+            }
+
+            for (var index = 0; index < max_task_id + 2; index++) {
+                title_border += "-";
+                if (index - 1 >= 0 && index - 1 < task_title.length) {
+                    title_vert += task_title[index - 1];
+                } else {
+                    title_vert += " ";
+                }
+            }
+
+            title_border += "+";
+            title_vert += "|";
+
+            for (var index = 0; index < max_error + 2; index++) {
+                title_border += "-";
+                if (index - 1 >= 0 && index - 1 < error_title.length) {
+                    title_vert += error_title[index - 1];
+                } else {
+                    title_vert += " ";
+                }
+            }
+            title_vert += "|";
+            title_border += "+";
+
+            result += title_border + "\n" + title_vert + "\n" + title_border + "\n";
+
+            for (var failure_index = 0; failure_index < failure_result.length; failure_index++) {
+                result += "| ";
+                var task_id = failure_result[failure_index].task_id.toString();
+                for (var index = 0; index < (max_task_id - task_id.length); index++) {
+                    result += " ";
+                }
+                result += task_id;
+                result += " | ";
+                var error = failure_result[failure_index].error;
+                result += error;
+                for (var index = 1 + error.length; index < max_error + 2; index++) {
+                    result += " ";
+                }
+                result += "|\n";
+            }
+            result += title_border + "\n";
+
+            result += "```\n";
+        }
+
+        output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+    }
+
+    if (!has_errors) {
+        if (id != null) {
+            get_user_from_slack(event, context, {}, function(task_body) {
+                request({
+                    url: "/tasks/" + id + "/purge",
+                    baseUrl: api_endpoint,
+                    method: "POST",
+                    json: true,
+                    body: {
+                        current_user: task_body.current_user
+                    }
+                }, function(err, resp, body) {
+                    if (err) {
+                        console.log("Failed to post to /tasks/"+id+"/purge");
+                        console.log(err);
+                        fail_message(event, context, "Oops... something went wrong!");
+                    } else if (resp.statusCode != 200) {
+                        console.log("Failed to post to /tasks/"+id+"/purge");
+                        console.log(resp);
+                        console.log(body);
+                        fail_message(event, context, "Oops... something went wrong!");
+                    } else {
+                        console.log(body);
+                        if (body && body.errorMessage != undefined) {
+                            output(event, context, {text: body.errorMessage});
+                        } else {
+                            output(event, context, {text: "Task " + id + " purged!"});
+                        }
+                    }
+                });
+            });
+        } else {
+            get_user_from_slack(event, context, {}, function(task_body) {
+                var current_user = task_body.current_user;
+                var queries = [];
+                var success_result = [], failure_result = [];
+                var running_queue = 0;
+
+                post_to_api = function(queries, is_final) {
+                    var query_string = "?" + queries.join("&");
+                    request({
+                        url: "/tasks" + query_string,
+                        baseUrl: api_endpoint,
+                        method: "GET",
+                        json: true
+                    }, function(err, resp, body) {
+
+                        if (err) {
+                            console.log("Failed to get to /tasks");
+                            console.log(err);
+                            fail_message(event, context, "Oops... something went wrong!");
+                        } else if (resp.statusCode != 200) {
+                            console.log("Failed to get to /tasks");
+                            console.log(resp);
+                            console.log(body);
+                            fail_message(event, context, "Oops... something went wrong!");
+                        } else {
+                            if (body.errorMessage != undefined) {
+                                output(event, context, {text: body.errorMessage});
+                            } else {
+                                if (body.length > 0) {
+                                    for (var task_index = 0; task_index < body.length; task_index++) {
+                                        running_queue++;
+                                        (function(task) {
+                                            var id = task._id;
+                                            request({
+                                                url: "/tasks/" + id + "/purge",
+                                                baseUrl: api_endpoint,
+                                                method: "POST",
+                                                json: true,
+                                                body: {
+                                                    current_user: current_user
+                                                }
+                                            }, function(err, resp, body) {
+                                                running_queue--;
+                                                if (err) {
+                                                    console.log("Failed to post to /tasks/"+id+"/purge");
+                                                    console.log(err);
+                                                    failure_result.push({
+                                                        task_id: id,
+                                                        error: "Failed to connect to task manager API service"
+                                                    });
+                                                } else if (resp.statusCode != 200) {
+                                                    console.log("Failed to post to /tasks/"+id+"/purge");
+                                                    console.log(resp);
+                                                    console.log(body);
+                                                    failure_result.push({
+                                                        task_id: id,
+                                                        error: "Task manager service returned error"
+                                                    });
+                                                } else {
+                                                    if (body && body.errorMessage != undefined) {
+                                                        failure_result.push({
+                                                            task_id: id,
+                                                            error: body.errorMessage
+                                                        });
+                                                    } else {
+                                                        success_result.push({
+                                                            task_id: id,
+                                                        });
+                                                    }
+                                                }
+
+                                                if (running_queue == 0 && is_final) {
+                                                    output_results(success_result, failure_result);
+                                                }
+                                            });
+                                        })(body[task_index]);
+                                    }
+                                }
+
+                                if (running_queue == 0 && is_final) {
+                                    output_results(success_result, failure_result);
+                                }
+                            }
+                        }
+
+                    });
+                }
+
+                parse_owner(owner, {}, function(task_body, users_info) {
+                    queries.push("owner=" + encodeURIComponent(task_body.owner));
+                    if (tag != null) {
+                        queries.push("tag=" + encodeURIComponent(tag));
+                    }
+                    if (state == null) {
+                        queries.push("status=completed");
+                        post_to_api(queries, false);
+                        queries.pop();
+                        queries.push("status=deleted");
+                        post_to_api(queries, true);
+                    } else {
+                        queries.push("status=" + encodeURIComponent(state));
+                        post_to_api(queries, true);
+                    }
+                });
+            });
+        }
+    }
+}
+
 task_status = function(event, context, argv) {
     var task_id = null;
     var new_status = argv[0];
@@ -1877,6 +2280,9 @@ exports.handler = function(event, context) {
             break;
         case "done":
             task_status(event, context, argv);
+            break;
+        case "purge":
+            purge(event, context, argv);
             break;
         case "man":
             output(event, context, {
