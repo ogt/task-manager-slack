@@ -291,34 +291,6 @@ Errors =>
 ===============================================================
 ez list
 ===============================================================
-
-USAGE 
-ez list 
-
-SUMMARY
-Lists
-Interface to the https://github.com/ezhome/task-manager DELETE /tasks/xxx web service
-Look at that documentation for the meaning of the various attributes
-and associated business logic. This man page focus on differences / command line specific
-functionality
-
-DESCRIPTION
-
--i --id       
-              # required except if -b option was given
-              # corresponds to the _id task attribute
--b --batch    # optional
-              # the csv file definition is similar to that of `ez update` with the exception that 
-              # it only carries an id column 
-              # note that we are appending a deletebatch=xxx tag
-
-OUTPUT
-
-
-
-----------------------------
-list
-----------------------------
 USAGE
 -s --state
               # optional
@@ -350,9 +322,9 @@ USAGE
 
 (unfortunately the current API defn requires a web call for each row of the list output)
 
-----------------------------
-show
-----------------------------
+===============================================================
+ez show
+===============================================================
 USAGE
 -l [--long]
                # optional
@@ -402,9 +374,9 @@ When the event log history is included
 +-------------+-----------------------+----------+
 
 
-----------------------------
-peek
-----------------------------
+===============================================================
+ez peek
+===============================================================
 SUMMARY
 Same as `list -s queued -q -n 1
 ie it displays the 
@@ -446,9 +418,10 @@ In its long form it also includes the rest of the attributes
   _completion_status : success or failure   # if the test is completed 
   _completed_on : '2015-11-20T17:26:33Z'    # if the test is completed 
 
-----------------------------
-grab [<task_id>]
-----------------------------
+===============================================================
+ez grab [<task_id>]
+===============================================================
+
 
 SUMMARY
 
@@ -484,9 +457,9 @@ Suspended tasks
 + 1567 Task title 1  <fg>
 + 3876 Task Title 2  <fg>
 
-----------------------------
-done 
-----------------------------
+===============================================================
+ez done 
+===============================================================
 USAGE
    done [success] 
    or
