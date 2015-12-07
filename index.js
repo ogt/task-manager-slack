@@ -1400,6 +1400,66 @@ format_task_output = function(task, users_info, show_long) {
     return result;
 }
 
+jobs = function(event, context, argv) {
+    var owner = argv[1];
+    if (owner != undefined) {
+        parse_owner(owner, {}, function(task_body, users_info) {
+            request({
+                url: "/workers/" + encodeURIComponent(task_body.owner) + "/tasks",
+                baseUrl: api_endpoint,
+                method: "GET",
+                json: true
+            }, function(err, resp, body) {
+                console.log("/workers/" + encodeURIComponent(task_body.owner) + "/tasks")
+                if (err) {
+                    console.log("Failed to get to /workers/"+task_body.owner+"/tasks");
+                    console.log(err);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else if (resp.statusCode != 200) {
+                    console.log("Failed to get to /workers/"+task_body.owner+"/tasks");
+                    console.log(resp);
+                    console.log(body);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else {
+                    if (body && body.errorMessage != undefined) {
+                        output(event, context, {text: body.errorMessage});
+                    } else {
+                        var text = "Tasks this user grabbed:\n";
+                        console.log(body);
+                        if (body.length > 0) {
+                            var user_email_map = {};
+                            for (var member_index = 0; member_index < users_info.members.length; member_index++) {
+                                var member = users_info.members[member_index];
+                                user_email_map[member.profile.email] = member.name;
+                            }
+                            var task_statuses = {};
+                            for (var task_index = 0; task_index < body.length; task_index++) {
+                                var task = body[task_index];
+                                if (task_statuses[task._work_status] == undefined) {
+                                    task_statuses[task._work_status] = [];
+                                }
+                                task_statuses[task._work_status].push("• [" + task._id + "] Do \"" + task.title + "\" by " + moment(task.deadline).format("h:mm a dddd, MMMM YYYY") + ", " + task._work_status);
+                            }
+                            for (var state in task_statuses) {
+                                if (task_statuses.hasOwnProperty(state)) {
+                                    text += state + ":\n";
+                                    text += task_statuses[state].join("\n");
+                                    text += "\n";
+                                }
+                            } 
+                        } else {
+                            text = "No tasks grabbed!!";
+                        }
+                        output(event, context, {text: text, mrkdwn: true});
+                    }
+                }
+            });
+        });
+    } else {
+        fail_message(event, context, "You must specify a user!");
+    }
+}
+
 list = function(event, context, argv) {
     var state = null, owner = null, tag = null, num = null, show_long = false, queue = false;
     var has_errors = false;
@@ -1716,6 +1776,56 @@ show = function(event, context, argv) {
     }
 }
 
+last = function(event, context, argv) {
+    var user = argv[1];
+
+    retrieve_last = function(user) {
+        request({
+            url: "/events?user=" + encodeURIComponent(user) + "&type=loginout",
+            baseUrl: api_endpoint,
+            method: "GET",
+            json: true
+        }, function(err, resp, body) {
+            if (err) {
+                console.log("Failed to get to /events");
+                console.log(err);
+                fail_message(event, context, "Oops... something went wrong!");
+            } else if (resp.statusCode != 200) {
+                console.log("Failed to get to /events");
+                console.log(resp);
+                console.log(body);
+                fail_message(event, context, "Oops... something went wrong!");
+            } else {
+                if (body && body.errorMessage != undefined) {
+                    output(event, context, {text: body.errorMessage});
+                } else {
+                    var response = "";
+                    if (body.length > 0) {
+                        for (var item_index = 0; item_index < body.length; item_index++) {
+                            var action = "Login";
+                            if (body[item_index].action == "logout") {
+                                action = "Logout";
+                            }
+                            response += "• " + moment(body[item_index].date).format("h:mm a dddd, MMMM YYYY") + ", " + action + "\n";
+                        }
+                    }
+                    output(event, context, {text: response, mrkdwn: true});
+                }
+            }
+        });
+    };
+
+    if (user == undefined) {
+        get_user_from_slack(event, context, {}, function(task_body) {
+            retrieve_last(task_body.current_user);
+        });
+    } else {
+        parse_owner(user, {}, function(task_body, users_info) {
+            retrieve_last(task_body.owner);
+        });
+    }
+}
+
 peek = function(event, context, argv) {
     var brief = false, show_long = false;
     var has_errors = false;
@@ -1744,33 +1854,33 @@ peek = function(event, context, argv) {
                 method: "GET",
                 json: true
             }, function(err, resp, body) {
-                    if (err) {
-                        console.log("Failed to get to /tasks/available");
-                        console.log(err);
-                        fail_message(event, context, "Oops... something went wrong!");
-                    } else if (resp.statusCode != 200) {
-                        console.log("Failed to get to /tasks/available");
-                        console.log(resp);
-                        console.log(body);
-                        fail_message(event, context, "Oops... something went wrong!");
+                if (err) {
+                    console.log("Failed to get to /tasks/available");
+                    console.log(err);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else if (resp.statusCode != 200) {
+                    console.log("Failed to get to /tasks/available");
+                    console.log(resp);
+                    console.log(body);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else {
+                    console.log(body);
+                    if (body.errorMessage != undefined) {
+                        output(event, context, {text: body.errorMessage});
                     } else {
-                        console.log(body);
-                        if (body.errorMessage != undefined) {
-                            output(event, context, {text: body.errorMessage});
+                        var task = body[0];
+                        if (brief) {
+                            output(event, context, {text: task._id});
                         } else {
-                            var task = body[0];
-                            if (brief) {
-                                output(event, context, {text: task._id});
-                            } else {
-                                retrieve_owner(function(users_info) {
-                                    output(event, context, {
-                                        attachments: [format_task_output(task, users_info, show_long)],
-                                        response_type: "in_channel"
-                                    });
+                            retrieve_owner(function(users_info) {
+                                output(event, context, {
+                                    attachments: [format_task_output(task, users_info, show_long)],
+                                    response_type: "in_channel"
                                 });
-                            }
+                            });
                         }
                     }
+                }
             });
         });
     }
@@ -1817,12 +1927,16 @@ grab = function(event, context, argv) {
                     output(event, context, {text: body.errorMessage});
                 } else {
                     var task = body;
-                    retrieve_owner(function(users_info) {
-                        output(event, context, {
-                            attachments: [format_task_output(task, users_info, true)],
-                            response_type: "in_channel"
+                    if (body.text != undefined) {
+                        output(event, context, body);
+                    } else {
+                        retrieve_owner(function(users_info) {
+                            output(event, context, {
+                                attachments: [format_task_output(task, users_info, true)],
+                                response_type: "in_channel"
+                            });
                         });
-                    });
+                    }
                 }
             }
         });
@@ -2114,6 +2228,111 @@ purge = function(event, context, argv) {
     }
 }
 
+finger = function(event, context, argv) {
+    var user = argv[1];
+
+    if (user == undefined) {
+        fail_message(event, context, "You must specify a user");
+    } else {
+        parse_owner(user, {}, function(task_body, users_info) {
+            request({
+                url: "/workers/" + task_body.owner + "/stats",
+                baseUrl: api_endpoint,
+                method: "GET",
+                json: true
+            }, function(err, resp, body) {
+                if (err) {
+                    console.log("Failed to get to /workers/"+task_body.owner+"/stats");
+                    console.log(err);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else if (resp.statusCode != 200) {
+                    console.log("Failed to get to /workers/"+task_body.owner+"/stats");
+                    console.log(resp);
+                    console.log(body);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else {
+                    console.log(body);
+                    if (body.errorMessage != undefined) {
+                        output(event, context, {text: body.errorMessage});
+                    } else {
+                        output(event, context, {
+                            mrkdwn: true,
+                            text: "• Average session length: " + body.avg_session_length + "\n" +
+                                "• Number of sessions: " + body.num_of_sessions + "\n" +
+                                "• Tasks grabbed: " + body.tasks_grabbed + "\n" +
+                                "• Tasks completed: " + body.tasks_completed + "\n" +
+                                "• Tasks completed successfully: " + body.tasks_completed_successfully + "\n" +
+                                "• Rejection ratio: " + body.rejection_ratio + "\n" +
+                                "• Failure ratio: " + body.failure_ratio
+                        });
+                    }
+                }
+            });
+        });
+    }
+}
+
+login = function(event, context, argv) {
+    get_user_from_slack(event, context, {}, function(task_body) {
+        request({
+            url: "/workers",
+            baseUrl: api_endpoint,
+            method: "POST",
+            json: true,
+            body: {"email": task_body.current_user}
+        }, function(err, resp, body) {
+            if (err) {
+                console.log("Failed to post to /workers");
+                console.log(err);
+                fail_message(event, context, "Oops... something went wrong!");
+            } else if (resp.statusCode != 200) {
+                console.log("Failed to post to /workers");
+                console.log(resp);
+                console.log(body);
+                fail_message(event, context, "Oops... something went wrong!");
+            } else {
+                console.log(body);
+                if (body && body.errorMessage != undefined) {
+                    output(event, context, {text: body.errorMessage});
+                } else {
+                    if (body.token != undefined) {
+                        output(event, context, {text: "Logged in successfully!"});
+                    }
+                }
+            }
+        });
+    });
+}
+
+logout = function(event, context, argv) {
+    get_user_from_slack(event, context, {}, function(task_body) {
+        request({
+            url: "/workers?current_user=" + encodeURIComponent(task_body.current_user),
+            baseUrl: api_endpoint,
+            method: "DELETE",
+            json: true
+        }, function(err, resp, body) {
+            if (err) {
+                console.log("Failed to delete to /workers");
+                console.log(err);
+                fail_message(event, context, "Oops... something went wrong!");
+            } else if (resp.statusCode != 200) {
+                console.log("Failed to delete to /workers");
+                console.log(resp);
+                console.log(body);
+                fail_message(event, context, "Oops... something went wrong!");
+            } else {
+                console.log(body);
+                if (body && body.errorMessage != undefined) {
+                    output(event, context, {text: body.errorMessage});
+                } else {
+                    output(event, context, {text: "Logged out successfully!"});
+                }
+            }
+        });
+    });
+}
+
 task_status = function(event, context, argv) {
     var task_id = null;
     var new_status = argv[0];
@@ -2284,13 +2503,33 @@ exports.handler = function(event, context) {
         case "purge":
             purge(event, context, argv);
             break;
+        case "finger":
+            finger(event, context, argv);
+            break;
+        case "login":
+            login(event, context, argv);
+            break;
+        case "logout":
+            logout(event, context, argv);
+            break;
+        case "last":
+            last(event, context, argv);
+            break;
+        case "jobs":
+            jobs(event, context, argv);
+            break;
         case "man":
             output(event, context, {
                 text: "```\nadd      - Adds task(s) in the queue\n" +
                     "update   - Update existing task - only possible while the task sits\n" +
                     "delete   - Deletes task(s) from the queue\n" +
+                    "finger   - Shows info about a particular user\n" +
                     "list     - Lists all tasks in the queue\n" +
-                    "show     - Shows info and statsabout a specific task\n" +
+                    "jobs     - List all the tasks that the user has grabbed (current and suspended)\n" +
+                    "last     - Log of logins and logouts\n" +
+                    "show     - Shows info and stats about a specific task\n" +
+                    "login    - Begins a new session\n" +
+                    "logout   - Ends the current session\n" +
                     "peek     - Shows you the next task that should be grabbed\n" +
                     "grab     - Take a task from the queue, making it the current task. If you were already working on a task suspend it\n" +
                     "release  - Puts task back to the queue without doing it\n" +
