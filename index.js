@@ -2,8 +2,8 @@ var request = require("request");
 var chrono = require("chrono-node");
 var moment = require("moment");
 
-var api_endpoint = "";
-var slack_token = "";
+var api_endpoint = "https://xb1dqtlhd0.execute-api.us-west-2.amazonaws.com/v1";
+var slack_token = "xoxp-2703963615-14366940084-15161434246-4901f4f02c";
 
 var time_start = 0;
 
@@ -111,7 +111,7 @@ parse_owner = function(owner, task_body, callback) {
     }
 }
 
-process_task = function(event, context, title, description, finish, estimate, owner, tags, callback,
+process_task = function(event, context, title, description, finish, estimate, owner, tags, priority, callback,
         error_callback) {
     if (title == null) {
         error_callback("You have to provide a title for the task!");
@@ -122,6 +122,10 @@ process_task = function(event, context, title, description, finish, estimate, ow
 
         if (description != null) {
             task_body.description = description;
+        }
+
+        if (priority != null) {
+            task_body.priority = priority;
         }
 
         if (finish != null) {
@@ -282,6 +286,7 @@ parse_csv_line = function(curr_line) {
 
 add = function(event, context, argv) {
     var title = null, description = null, finish = null, estimate = null, owner = null, tags = null, batch = null;
+    var priority = null;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
         switch (argv[arg_index]) {
@@ -320,6 +325,11 @@ add = function(event, context, argv) {
                 batch = argv[arg_index + 1];
                 arg_index++;
                 break;
+            case "-p":
+            case "--priority":
+                priority = argv[arg_index + 1];
+                arg_index++;
+                break;
             default:
                 has_errors = true;
                 fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
@@ -329,7 +339,7 @@ add = function(event, context, argv) {
 
     if (!has_errors) {
         if (batch == null) {
-            process_task(event, context, title, description, finish, estimate, owner, tags,
+            process_task(event, context, title, description, finish, estimate, owner, tags, priority,
                     function(task_body) {
                         get_user_from_slack(event, context, task_body, function(task_body) {
                             request({
@@ -459,7 +469,8 @@ add = function(event, context, argv) {
                             finish: -1,
                             estimate: -1,
                             owner: -1,
-                            tags: -1
+                            tags: -1,
+                            priority: -1
                         };
 
                         var lines = body.split("\n");
@@ -479,7 +490,7 @@ add = function(event, context, argv) {
                             running_queue++;
                             (function(columns, line_index) {
                                 var task_title = null, task_description = null, task_finish = null, task_estimate = null;
-                                var task_owner = null, task_tags = null;
+                                var task_owner = null, task_tags = null, task_priority = null;
                                 if (column_map.title != -1) {
                                     task_title = columns[column_map.title];
                                 }
@@ -497,6 +508,9 @@ add = function(event, context, argv) {
                                 }
                                 if (column_map.tags != -1) {
                                     task_tags = columns[column_map.tags];
+                                }
+                                if (column_map.priority != -1) {
+                                    task_priority = columns[column_map.priority];
                                 }
                                 if (title != null) {
                                     task_title = title;
@@ -516,6 +530,9 @@ add = function(event, context, argv) {
                                 if (tags != null) {
                                     task_tags = tags;
                                 }
+                                if (priority != null) {
+                                    task_priority = priority;
+                                }
 
                                 if (task_tags == null) {
                                     task_tags = "";
@@ -526,7 +543,7 @@ add = function(event, context, argv) {
                                 task_tags += "addbatch:" + filename;
 
                                 process_task(event, context, task_title, task_description, task_finish, task_estimate,
-                                        task_owner, task_tags, function(task_body) {
+                                        task_owner, task_tags, task_priority, function(task_body) {
                                             request({
                                                 url: "/tasks",
                                                 baseUrl: api_endpoint,
@@ -593,7 +610,7 @@ add = function(event, context, argv) {
 
 update = function(event, context, argv) {
     var title = null, description = null, finish = null, estimate = null, owner = null, tags = null, batch = null;
-    var id = null;
+    var id = null, priority = null;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
         switch (argv[arg_index]) {
@@ -637,6 +654,11 @@ update = function(event, context, argv) {
                 batch = argv[arg_index + 1];
                 arg_index++;
                 break;
+            case "-p":
+            case "--priority":
+                priority = argv[arg_index + 1];
+                arg_index++;
+                break;
             default:
                 has_errors = true;
                 fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
@@ -646,7 +668,7 @@ update = function(event, context, argv) {
 
     if (!has_errors) {
         if (batch == null) {
-            process_task(event, context, title, description, finish, estimate, owner, tags,
+            process_task(event, context, title, description, finish, estimate, owner, tags, priority,
                     function(task_body) {
                         request({
                             url: "https://slack.com/api/users.info?token=" + slack_token + "&user=" + encodeURIComponent(event.user_id)
@@ -819,7 +841,8 @@ update = function(event, context, argv) {
                             finish: -1,
                             estimate: -1,
                             owner: -1,
-                            tags: -1
+                            tags: -1,
+                            priority: -1
                         };
 
                         var lines = body.split("\n");
@@ -840,7 +863,7 @@ update = function(event, context, argv) {
                             (function(columns, line_index) {
                                 var task_id = null;
                                 var task_title = null, task_description = null, task_finish = null, task_estimate = null;
-                                var task_owner = null, task_tags = null;
+                                var task_owner = null, task_tags = null, task_priority = null;
                                 if (column_map.id != -1) {
                                     task_id = columns[column_map.id];
                                 }
@@ -861,6 +884,9 @@ update = function(event, context, argv) {
                                 }
                                 if (column_map.tags != -1) {
                                     task_tags = columns[column_map.tags];
+                                }
+                                if (column_map.priority != -1) {
+                                    task_priority = columns[column_map.priority];
                                 }
                                 if (id != null) {
                                     task_id = id;
@@ -883,6 +909,9 @@ update = function(event, context, argv) {
                                 if (tags != null) {
                                     task_tags = tags;
                                 }
+                                if (priority != null) {
+                                    task_priority = priority;
+                                }
 
                                 if (task_tags == null) {
                                     task_tags = "";
@@ -893,7 +922,7 @@ update = function(event, context, argv) {
                                 task_tags += "updatebatch:" + filename;
 
                                 process_task(event, context, task_title, task_description, task_finish, task_estimate,
-                                        task_owner, task_tags, function(task_body) {
+                                        task_owner, task_tags, task_priority, function(task_body) {
                                             request({
                                                 url: "/tasks/" + task_id,
                                                 baseUrl: api_endpoint,
@@ -1320,8 +1349,8 @@ format_task_output = function(task, users_info, show_long) {
         text: task.description,
         fields: [
         {
-            title: "Deadline",
-            value: task.deadline,
+            title: "Priority",
+            value: task.priority,
             short: true
         },
         {
@@ -1549,7 +1578,7 @@ list = function(event, context, argv) {
                                 if (task_statuses[task.state] == undefined) {
                                     task_statuses[task.state] = [];
                                 }
-                                task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" by " + moment(task.deadline).format("h:mm a dddd, MMMM YYYY") + ", owned by " + user_email_map[task.owner]);
+                                task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner]);
                             }
                             for (var state in task_statuses) {
                                 if (task_statuses.hasOwnProperty(state)) {
@@ -2255,9 +2284,11 @@ finger = function(event, context, argv) {
                     if (body.errorMessage != undefined) {
                         output(event, context, {text: body.errorMessage});
                     } else {
+                        var avg_session_length = moment.duration(body.avg_session_length / 1000).humanize();
                         output(event, context, {
                             mrkdwn: true,
-                            text: "• Average session length: " + body.avg_session_length + "\n" +
+                            text: "Statistics for " + user + ":\n" +
+                                "• Average session length: " + avg_session_length + "\n" +
                                 "• Number of sessions: " + body.num_of_sessions + "\n" +
                                 "• Tasks grabbed: " + body.tasks_grabbed + "\n" +
                                 "• Tasks completed: " + body.tasks_completed + "\n" +
@@ -2302,6 +2333,103 @@ login = function(event, context, argv) {
             }
         });
     });
+}
+
+who = function(event, context, argv) {
+    request({
+        url: "/workers",
+        baseUrl: api_endpoint,
+        method: "GET",
+        json: true
+    }, function(err, resp, body) {
+        if (err) {
+            console.log("Failed to get to /workers");
+            console.log(err);
+            fail_message(event, context, "Oops... something went wrong!");
+        } else if (resp.statusCode != 200) {
+            console.log("Failed to post to /workers");
+            console.log(resp);
+            console.log(body);
+        } else {
+            if (body && body.errorMessage != undefined) {
+                output(event, context, {text: body.errorMessage});
+            } else {
+                if (body.length > 0) {
+                    retrieve_owner(function(users_info) {
+                        var result = "Logged in users:\n";
+                        var users_lookup = {};
+                        for (var member_index = 0; member_index < users_info.members.length; member_index++) {
+                            var member = users_info.members[member_index];
+                            users_lookup[member.profile.email] = member.name;
+                        }
+                        for (var item_index = 0; item_index < body.length; item_index++) {
+                            var user = body[item_index];
+                            if (user["status"] == "loggedin") {
+                                result += "• " + users_lookup[user.userid] + ", logged in on " + moment(user.loggedin_on).format("h:mm a dddd, MMMM YYYY") + "\n";
+                            }
+                        }
+                        output(event, context, {text: result, mrkdwn: true});
+                    });
+                } else {
+                    output(event, context, {text: "Currently no logged in users"});
+                }
+            }
+        }
+    });
+}
+
+sudo = function(event, context, argv) {
+    var user = argv[1];
+
+    if (user) {
+        parse_owner(user, {}, function(task_body, users_info) {
+            var target_user = task_body.owner;
+            var current_user = event.user_id;
+            for (var member_index = 0; member_index < users_info.members.length; member_index++) {
+                var member = users_info.members[member_index];
+                if (member.id == event.user_id) {
+                    current_user = member.profile.email;
+                    break;
+                }
+            }
+            request({
+                url: "/workers/" + encodeURIComponent(target_user) + "/assume",
+                baseUrl: api_endpoint,
+                method: "POST",
+                json: true,
+                body: {"current_user": current_user}
+            }, function(err, resp, body) {
+                if (err) {
+                    console.log("Failed to post to /workers");
+                    console.log(err);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else if (resp.statusCode != 200) {
+                    console.log("Failed to post to /workers");
+                    console.log(resp);
+                    console.log(body);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else {
+                    console.log(body);
+                    if (body && body.errorMessage != undefined) {
+                        output(event, context, {text: body.errorMessage});
+                    } else {
+                        if (body == true) {
+                            output(event, context, {text: "You are now " + user});
+                        } else {
+                            console.log(body);
+                            if (body.text != undefined) {
+                                output(event, context, {text: body.text});
+                            } else {
+                                output(event, context, {text: "Something went wrong!"});
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    } else {
+        output(event, context, {text: "You have to input a user!"});
+    }
 }
 
 logout = function(event, context, argv) {
@@ -2404,142 +2532,221 @@ task_status = function(event, context, argv) {
 }
 
 exports.handler = function(event, context) {
-    time_start = (new Date()).getTime();
-    var argv = [];
-    if (event.text != "") {
-        var curr_arg = "";
-        for (var char_index = 0; char_index < event.text.length;) {
-            if (event.text[char_index] == " ") {
-                if (curr_arg != "") {
-                    argv.push(curr_arg);
-                    curr_arg = "";
-                }
-                char_index++;
-            } else {
-                if (event.text[char_index] == '"') {
-                    char_index++;
-                    while (event.text[char_index] != '"' && char_index < event.text.length) {
-                        if (event.text[char_index] == '\\' && event.text[char_index] == '"') {
-                            curr_arg += '"';
-                            char_index += 2;
-                        } else {
-                            curr_arg += event.text[char_index];
-                            char_index++;
-                        }
+    if (event.channel_name != undefined) {
+        if (event.channel_name == 'auto-signups' && event.bot_name == 'bookingbot') {
+            var parts = event.text.split('*');
+            var customer_name = parts[1].replace('&lt;', '<').replace('&gt;', '>');
+            var address = parts[3];
+            process_task(event, context, "CAD task: " + customer_name + " (" + address + ")",
+                    "Go and claim this house at https://my.ezhome.com/admin/blueprints_queue/",
+                    null, null, "joana", "cad:auto-signups", 100, function(task_body) {
+                        task_body.current_user = "joana@ezhome.io";
+                        request({
+                            url: "/tasks",
+                            baseUrl: api_endpoint,
+                            method: "POST",
+                            json: true,
+                            body: task_body
+                        }, function(err, resp, body) {
+                            if (err) {
+                                console.log(err);
+                            } else if (resp.statusCode != 200) {
+                                console.log(resp);
+                                console.log(body);
+                            } else {
+                                console.log("Task added from auto-signups!");
+                            }
+                            context.done();
+                        });
+                    }, function(error_message) {
+                        console.log(error_message);
+                        context.done();
+                    });
+        } else if (event.channel_name == 'auto-close' && event.bot_name == 'bookingbot') {
+            var parts = event.text.split('*');
+            var customer_name = parts[1];
+            var address = parts[3];
+            process_task(event, context, "Central repo task: " + customer_name + " (" + address + ")",
+                    null, null, null, "jenny", "central-repo:auto-close", 20, function(task_body) {
+                        task_body.current_user = "jenny@ezhome.com";
+                        request({
+                            url: "/tasks",
+                            baseUrl: api_endpoint,
+                            method: "POST",
+                            json: true,
+                            body: task_body
+                        }, function(err, resp, body) {
+                            if (err) {
+                                console.log(err);
+                            } else if (resp.statusCode != 200) {
+                                console.log(resp);
+                                console.log(body);
+                            } else {
+                                console.log("Task added from auto-close!");
+                            }
+                            context.done();
+                        });
+                    });
+        }
+    } else {
+        time_start = (new Date()).getTime();
+        var argv = [];
+        if (event.text != "") {
+            var curr_arg = "";
+            for (var char_index = 0; char_index < event.text.length;) {
+                if (event.text[char_index] == " ") {
+                    if (curr_arg != "") {
+                        argv.push(curr_arg);
+                        curr_arg = "";
                     }
-                    // NOTE(yinjun): Consume last '"'
-                    char_index++;
-                } else if (event.text[char_index] == "'") {
-                    char_index++;
-                    while (event.text[char_index] != "'" && char_index < event.text.length) {
-                        if (event.text[char_index] == '\\' && event.text[char_index] == "'") {
-                            curr_arg += "'";
-                            char_index += 2;
-                        } else {
-                            curr_arg += event.text[char_index];
-                            char_index++;
-                        }
-                    }
-                    // NOTE(yinjun): Consume last "'"
-                    char_index++;
-                } else if (event.text[char_index] == "\u201C") {
-                    char_index++;
-                    while (event.text[char_index] != "\u201D" && char_index < event.text.length) {
-                        curr_arg += event.text[char_index];
-                        char_index++;
-                    }
-                    // NOTE(yinjun): Consume last '"'
                     char_index++;
                 } else {
-                    while (event.text[char_index] != ' ' && char_index < event.text.length) {
-                        curr_arg += event.text[char_index];
+                    if (event.text[char_index] == '"') {
                         char_index++;
+                        while (event.text[char_index] != '"' && char_index < event.text.length) {
+                            if (event.text[char_index] == '\\' && event.text[char_index] == '"') {
+                                curr_arg += '"';
+                                char_index += 2;
+                            } else {
+                                curr_arg += event.text[char_index];
+                                char_index++;
+                            }
+                        }
+                        // NOTE(yinjun): Consume last '"'
+                        char_index++;
+                    } else if (event.text[char_index] == "'") {
+                        char_index++;
+                        while (event.text[char_index] != "'" && char_index < event.text.length) {
+                            if (event.text[char_index] == '\\' && event.text[char_index] == "'") {
+                                curr_arg += "'";
+                                char_index += 2;
+                            } else {
+                                curr_arg += event.text[char_index];
+                                char_index++;
+                            }
+                        }
+                        // NOTE(yinjun): Consume last "'"
+                        char_index++;
+                    } else if (event.text[char_index] == "\u201C") {
+                        char_index++;
+                        // NOTE(yinjun): There's a weird case here when it's opened with \u201D but then
+                        // if the quote is the last character of the string, it will be ended with the
+                        // normal ascii " character, and since we want to support the case where users
+                        // accidentally try to escape the " characters within the quotes, some weird
+                        // edge case handling is done.
+                        while (event.text[char_index] != "\u201D" && char_index < event.text.length) {
+                            if (event.text[char_index] == '"' && event.text[char_index-1] != '\\' &&
+                                    char_index == event.text.length - 1) {
+                                char_index++;
+                            } else if (event.text[char_index] == '\\' && event.text[char_index] == '"') {
+                                curr_arg += '"';
+                                char_index += 2;
+                            } else {
+                                curr_arg += event.text[char_index];
+                                char_index++;
+                            }
+                        }
+                        // NOTE(yinjun): Consume last '"'
+                        char_index++;
+                    } else {
+                        while (event.text[char_index] != ' ' && char_index < event.text.length) {
+                            curr_arg += event.text[char_index];
+                            char_index++;
+                        }
                     }
                 }
             }
+            if (curr_arg != "") {
+                argv.push(curr_arg);
+            }
         }
-        if (curr_arg != "") {
-            argv.push(curr_arg);
+
+        console.log(event.text);
+        console.log("Parsed arguments");
+        console.log(argv);
+
+        switch (argv[0]) {
+            case "add":
+                add(event, context, argv);
+                break;
+            case "update":
+                update(event, context, argv);
+                break;
+            case "delete":
+                task_delete(event, context, argv);
+                break;
+            case "list":
+                list(event, context, argv);
+                break;
+            case "show":
+                show(event, context, argv);
+                break;
+            case "peek":
+                peek(event, context, argv);
+                break;
+            case "grab":
+                grab(event, context, argv);
+                break;
+            case "release":
+                task_status(event, context, argv);
+                break;
+            case "bg":
+                task_status(event, context, argv);
+                break;
+            case "fg":
+                task_status(event, context, argv);
+                break;
+            case "done":
+                task_status(event, context, argv);
+                break;
+            case "purge":
+                purge(event, context, argv);
+                break;
+            case "finger":
+                finger(event, context, argv);
+                break;
+            case "start":
+                login(event, context, argv);
+                break;
+            case "finish":
+                logout(event, context, argv);
+                break;
+            case "last":
+                last(event, context, argv);
+                break;
+            case "jobs":
+                jobs(event, context, argv);
+                break;
+            case "sudo":
+                sudo(event, context, argv);
+                break;
+            case "who":
+                who(event, context, argv);
+                break;
+            case "man":
+                output(event, context, {
+                    text: "```\nadd      - Adds task(s) in the queue\n" +
+                        "update   - Update existing task - only possible while the task sits\n" +
+                        "delete   - Deletes task(s) from the queue\n" +
+                        "finger   - Shows info about a particular user\n" +
+                        "list     - Lists all tasks in the queue\n" +
+                        "jobs     - List all the tasks that the user has grabbed (current and suspended)\n" +
+                        "last     - Log of logins and logouts\n" +
+                        "show     - Shows info and stats about a specific task\n" +
+                        "start    - Begins a new session\n" +
+                        "finish   - Ends the current session\n" +
+                        "peek     - Shows you the next task that should be grabbed\n" +
+                        "grab     - Take a task from the queue, making it the current task. If you were already working on a task suspend it\n" +
+                        "release  - Puts task back to the queue without doing it\n" +
+                        "bg       - Suspends a currently active task\n" +
+                        "fg       - Activates a suspended task\n" +
+                        "sudo     - Assume the identity of a logged in user\n" +
+                        "done     - Mark the current task as completed\n" +
+                        "purge    - Completely removes deleted or completed task\n" +
+                        "man      - Shows this page\n```\n",
+                    mrkdwn: true
+                });
+                break;
         }
-    }
-
-    console.log("Parsed arguments");
-    console.log(argv);
-
-    switch (argv[0]) {
-        case "add":
-            add(event, context, argv);
-            break;
-        case "update":
-            update(event, context, argv);
-            break;
-        case "delete":
-            task_delete(event, context, argv);
-            break;
-        case "list":
-            list(event, context, argv);
-            break;
-        case "show":
-            show(event, context, argv);
-            break;
-        case "peek":
-            peek(event, context, argv);
-            break;
-        case "grab":
-            grab(event, context, argv);
-            break;
-        case "release":
-            task_status(event, context, argv);
-            break;
-        case "bg":
-            task_status(event, context, argv);
-            break;
-        case "fg":
-            task_status(event, context, argv);
-            break;
-        case "done":
-            task_status(event, context, argv);
-            break;
-        case "purge":
-            purge(event, context, argv);
-            break;
-        case "finger":
-            finger(event, context, argv);
-            break;
-        case "login":
-            login(event, context, argv);
-            break;
-        case "logout":
-            logout(event, context, argv);
-            break;
-        case "last":
-            last(event, context, argv);
-            break;
-        case "jobs":
-            jobs(event, context, argv);
-            break;
-        case "man":
-            output(event, context, {
-                text: "```\nadd      - Adds task(s) in the queue\n" +
-                    "update   - Update existing task - only possible while the task sits\n" +
-                    "delete   - Deletes task(s) from the queue\n" +
-                    "finger   - Shows info about a particular user\n" +
-                    "list     - Lists all tasks in the queue\n" +
-                    "jobs     - List all the tasks that the user has grabbed (current and suspended)\n" +
-                    "last     - Log of logins and logouts\n" +
-                    "show     - Shows info and stats about a specific task\n" +
-                    "login    - Begins a new session\n" +
-                    "logout   - Ends the current session\n" +
-                    "peek     - Shows you the next task that should be grabbed\n" +
-                    "grab     - Take a task from the queue, making it the current task. If you were already working on a task suspend it\n" +
-                    "release  - Puts task back to the queue without doing it\n" +
-                    "bg       - Suspends a currently active task\n" +
-                    "fg       - Activates a suspended task\n" +
-                    "done     - Mark the current task as completed\n" +
-                    "purge    - Completely removes deleted or completed task\n" +
-                    "man      - Shows this page\n```\n",
-                mrkdwn: true
-            });
-            break;
     }
 }
