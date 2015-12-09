@@ -5,7 +5,7 @@ Slack Interface to the task-manager service
 ez add
 ===============================================================
 USAGE 
-ez add -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -g "funny jenny:urgent" -b <batch file>
+ez add -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -o <priority> -g "funny jenny:urgent" -b <batch file>
 
 SUMMARY
 Adds a task with these parameters in the queue
@@ -43,6 +43,13 @@ DESCRIPTION
               # when using the email convention the @ezhome.com can be ommitted
               # when issued from slack the current user is the currently authenticated slack user
               # when issued from the command line the current user is the currently authenticated aws user??
+-p --priority :  
+              # optional 
+              # Sets the priority attribute
+              # accepts any number. It influences the queue order (the order the results show on `list`)
+              # higher priority tasks appear first, within the same priority earlier tasks appear first)
+              # as a result priority attribute value affect both `peek` and `grab` operation
+              # if ommitted it is the same as setting the priority to 0
 -g --tags     # optional
               # a single argument of space separated tags
               # sets the tags attribute
@@ -118,7 +125,7 @@ ez update
 ===============================================================
 
 USAGE 
-ez update -i 4567 -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -g "funny jenny:urgent" -b <batch file>
+ez update -i 4567 -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -p <property> -g "funny jenny:urgent" -b <batch file>
 
 SUMMARY
 Updates an existing queued task with these parameters.
@@ -135,6 +142,7 @@ DESCRIPTION
 -d --description
 -f --finish : 
 -e --estimate : 
+-p --property :
 -o --owner :  
               # see ez add for the description of the fields above
 -b --batch    # optional
@@ -154,6 +162,7 @@ Task 5678 Updated!
   description  :  
   deadline  : '2015-11-20T17:31:33Z'
   estimate : 300
+  priority : 0
   owner :  'odysseas@ezhome.com'  
 
   _id : 5768
@@ -243,6 +252,7 @@ Task 5678 Deleted!
   description  :  
   deadline  : '2015-11-20T17:31:33Z'
   estimate : 300
+  priority : 0
   owner :  'odysseas@ezhome.com'  
 
   _id : 5768
@@ -307,7 +317,7 @@ USAGE
               # tag can be any tag valie
               # the result listing shows only tasks that contain the exact tag
               # this corresponds to GET /tasks?tag=xxxx
--n --num      # optional - if n missing it defaults to 100 (this should the server default)
+-n --num      # optional - if n missing it defaults to 10 (this should the server default)
               # the result listing is limited to n rows
 
 -l --long 
@@ -340,6 +350,7 @@ In its brief form displays:
   _id : 5768
   title : 'email me some positive thoughts. I am feeling down!'
   deadline  : '2015-11-20T17:31:33Z'
+  priority : 0
   owner :  'odysseas@ezhome.com'
   _state : 'queued'
 
@@ -349,6 +360,7 @@ In its long form it also includes the rest of the attributes
   title : 'email me some positive thoughts. I am feeling down!'
   description  :  
   deadline  : '2015-11-20T17:31:33Z'
+  priority : 0
   owner :  'odysseas@ezhome.com'
   _state : 'queued'
   estimate : 300
@@ -396,6 +408,7 @@ In its brief form displays:
   _id      : 5768
   title    : 'email me some positive thoughts. I am feeling down!'
   deadline : '2015-11-20T17:31:33Z'
+  priority : 0
   owner    :  'odysseas@ezhome.com'
   _state   : 'queued'
 
@@ -405,6 +418,7 @@ In its long form it also includes the rest of the attributes
   title : 'email me some positive thoughts. I am feeling down!'
   description  :  
   deadline  : '2015-11-20T17:31:33Z'
+  priority : 0
   owner :  'odysseas@ezhome.com'
   _state : 'queued'
   estimate : 300
@@ -446,6 +460,7 @@ Task 4567 Grabbed  <release> <done-success> <done-fail>
   title : 'email me some positive thoughts. I am feeling down!'
   description  :  
   deadline  : '2015-11-20T17:31:33Z'
+  priority : 0
   owner :  'odysseas@ezhome.com'
   estimate : 300
   tags : [ tag1 tag2 ]
