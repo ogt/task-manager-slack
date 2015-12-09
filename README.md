@@ -97,7 +97,7 @@ If this is a batch-add the output is
 `NN Tasks queued successfully. MM Tasks failed to be queued`
 
 //After this summary stmt we display the output of 
-// list -t "addbatch:batchfile" 
+// list -g "addbatch:batchfile" 
 ----
 Added => 
 +--------+------------------------+
@@ -191,7 +191,7 @@ If batch
 `NN Tasks updated successfully. MM Tasks failed to be updated`
 
 //After this summary stmt we display the output of 
-// list -t "updatebatch:batchfile" 
+// list -g "updatebatch:batchfile" 
 ----
 Updated => 
 +--------+------------------------+
