@@ -2,8 +2,8 @@ var request = require("request");
 var chrono = require("chrono-node");
 var moment = require("moment");
 
-var api_endpoint = "https://xb1dqtlhd0.execute-api.us-west-2.amazonaws.com/v1";
-var slack_token = "xoxp-2703963615-14366940084-15161434246-4901f4f02c";
+var api_endpoint = "";
+var slack_token = "";
 
 var time_start = 0;
 
@@ -111,7 +111,7 @@ parse_owner = function(owner, task_body, callback) {
     }
 }
 
-process_task = function(event, context, title, description, finish, estimate, owner, tags, priority, callback,
+process_task = function(event, context, title, description, finish, estimate, owner, tags, priority, instructions, callback,
         error_callback) {
     if (title == null) {
         error_callback("You have to provide a title for the task!");
@@ -126,6 +126,10 @@ process_task = function(event, context, title, description, finish, estimate, ow
 
         if (priority != null) {
             task_body.priority = priority;
+        }
+
+        if (instructions != null) {
+            task_body.instructions = instructions;
         }
 
         if (finish != null) {
@@ -286,7 +290,7 @@ parse_csv_line = function(curr_line) {
 
 add = function(event, context, argv) {
     var title = null, description = null, finish = null, estimate = null, owner = null, tags = null, batch = null;
-    var priority = null;
+    var priority = null, instructions = null;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
         switch (argv[arg_index]) {
@@ -330,6 +334,11 @@ add = function(event, context, argv) {
                 priority = argv[arg_index + 1];
                 arg_index++;
                 break;
+            case "-n":
+            case "--instructions":
+                instructions = argv[arg_index + 1];
+                arg_index++;
+                break;
             default:
                 has_errors = true;
                 fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
@@ -339,7 +348,7 @@ add = function(event, context, argv) {
 
     if (!has_errors) {
         if (batch == null) {
-            process_task(event, context, title, description, finish, estimate, owner, tags, priority,
+            process_task(event, context, title, description, finish, estimate, owner, tags, priority, instructions,
                     function(task_body) {
                         get_user_from_slack(event, context, task_body, function(task_body) {
                             request({
@@ -470,7 +479,8 @@ add = function(event, context, argv) {
                             estimate: -1,
                             owner: -1,
                             tags: -1,
-                            priority: -1
+                            priority: -1,
+                            instructions: -1
                         };
 
                         var lines = body.split("\n");
@@ -490,7 +500,7 @@ add = function(event, context, argv) {
                             running_queue++;
                             (function(columns, line_index) {
                                 var task_title = null, task_description = null, task_finish = null, task_estimate = null;
-                                var task_owner = null, task_tags = null, task_priority = null;
+                                var task_owner = null, task_tags = "", task_priority = null, task_instructions = null;
                                 if (column_map.title != -1) {
                                     task_title = columns[column_map.title];
                                 }
@@ -512,6 +522,9 @@ add = function(event, context, argv) {
                                 if (column_map.priority != -1) {
                                     task_priority = columns[column_map.priority];
                                 }
+                                if (column_map.instructions != -1) {
+                                    task_instructions = columns[column_map.instructions];
+                                }
                                 if (title != null) {
                                     task_title = title;
                                 }
@@ -528,22 +541,25 @@ add = function(event, context, argv) {
                                     task_owner = owner;
                                 }
                                 if (tags != null) {
-                                    task_tags = tags;
+                                    if (task_tags != "") {
+                                        task_tags += " ";
+                                    }
+                                    task_tags += tags;
                                 }
                                 if (priority != null) {
                                     task_priority = priority;
                                 }
-
-                                if (task_tags == null) {
-                                    task_tags = "";
+                                if (instructions != null) {
+                                    task_instructions = instructions;
                                 }
+
                                 if (task_tags != "") {
-                                    task_tags += "";
+                                    task_tags += " ";
                                 }
                                 task_tags += "addbatch:" + filename;
 
                                 process_task(event, context, task_title, task_description, task_finish, task_estimate,
-                                        task_owner, task_tags, task_priority, function(task_body) {
+                                        task_owner, task_tags, task_priority, task_instructions, function(task_body) {
                                             request({
                                                 url: "/tasks",
                                                 baseUrl: api_endpoint,
@@ -610,7 +626,7 @@ add = function(event, context, argv) {
 
 update = function(event, context, argv) {
     var title = null, description = null, finish = null, estimate = null, owner = null, tags = null, batch = null;
-    var id = null, priority = null;
+    var id = null, priority = null, instructions = null;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
         switch (argv[arg_index]) {
@@ -659,6 +675,11 @@ update = function(event, context, argv) {
                 priority = argv[arg_index + 1];
                 arg_index++;
                 break;
+            case "-n":
+            case "--instructions":
+                instructions = argv[arg_index + 1];
+                arg_index++;
+                break;
             default:
                 has_errors = true;
                 fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
@@ -668,7 +689,7 @@ update = function(event, context, argv) {
 
     if (!has_errors) {
         if (batch == null) {
-            process_task(event, context, title, description, finish, estimate, owner, tags, priority,
+            process_task(event, context, title, description, finish, estimate, owner, tags, priority, instructions,
                     function(task_body) {
                         request({
                             url: "https://slack.com/api/users.info?token=" + slack_token + "&user=" + encodeURIComponent(event.user_id)
@@ -842,7 +863,8 @@ update = function(event, context, argv) {
                             estimate: -1,
                             owner: -1,
                             tags: -1,
-                            priority: -1
+                            priority: -1,
+                            instructions: -1
                         };
 
                         var lines = body.split("\n");
@@ -863,7 +885,7 @@ update = function(event, context, argv) {
                             (function(columns, line_index) {
                                 var task_id = null;
                                 var task_title = null, task_description = null, task_finish = null, task_estimate = null;
-                                var task_owner = null, task_tags = null, task_priority = null;
+                                var task_owner = null, task_tags = "", task_priority = null, task_instructions = null;
                                 if (column_map.id != -1) {
                                     task_id = columns[column_map.id];
                                 }
@@ -888,6 +910,10 @@ update = function(event, context, argv) {
                                 if (column_map.priority != -1) {
                                     task_priority = columns[column_map.priority];
                                 }
+                                if (column_map.instructions != -1) {
+                                    task_instructions = columns[column_map.instructions];
+                                }
+
                                 if (id != null) {
                                     task_id = id;
                                 }
@@ -907,22 +933,25 @@ update = function(event, context, argv) {
                                     task_owner = owner;
                                 }
                                 if (tags != null) {
-                                    task_tags = tags;
+                                    if (task_tags != "") {
+                                        task_tags += " ";
+                                    }
+                                    task_tags += tags;
                                 }
                                 if (priority != null) {
                                     task_priority = priority;
                                 }
-
-                                if (task_tags == null) {
-                                    task_tags = "";
+                                if (instructions != null) {
+                                    task_instructions = instructions;
                                 }
+
                                 if (task_tags != "") {
-                                    task_tags += "";
+                                    task_tags += " ";
                                 }
                                 task_tags += "updatebatch:" + filename;
 
                                 process_task(event, context, task_title, task_description, task_finish, task_estimate,
-                                        task_owner, task_tags, task_priority, function(task_body) {
+                                        task_owner, task_tags, task_priority, task_instructions, function(task_body) {
                                             request({
                                                 url: "/tasks/" + task_id,
                                                 baseUrl: api_endpoint,
@@ -1347,6 +1376,7 @@ format_task_output = function(task, users_info, show_long) {
     var result = {
         title: task.title,
         text: task.description,
+        mrkdwn: true,
         fields: [
         {
             title: "Priority",
@@ -1370,6 +1400,13 @@ format_task_output = function(task, users_info, show_long) {
         },
         ]
     };
+
+    if (task.instructions) {
+        result.fields.push({
+            title: "Instructions",
+            value: task.instructions
+        });
+    }
 
     if (show_long) {
         if (task.estimate != undefined && task.estimate != "") {
@@ -1572,13 +1609,48 @@ list = function(event, context, argv) {
                                 var member = users_info.members[member_index];
                                 user_email_map[member.profile.email] = member.name;
                             }
-                            var task_statuses = {};
+                            var tasks = {};
+                            var priority_index = 0;
+                            var prev_priority = -100;
                             for (var task_index = 0; task_index < body.length; task_index++) {
                                 var task = body[task_index];
-                                if (task_statuses[task.state] == undefined) {
-                                    task_statuses[task.state] = [];
+                                if (task.priority != prev_priority) {
+                                    priority_index++;
+                                    prev_priority = task.priority;
+                                    if (tasks[priority_index.toString()] == undefined) {
+                                        tasks[priority_index.toString()] = [];
+                                    }
                                 }
-                                task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner]);
+                                tasks[priority_index.toString()].push(task);
+                            }
+
+                            compare_task = function(a, b) {
+                                if (a._created_on < b._created_on) {
+                                    return -1;
+                                }
+                                if (a._created_on > b._created_on) {
+                                    return 1;
+                                }
+
+                                return 0;
+                            };
+
+                            for (var priority in tasks) {
+                                if (tasks.hasOwnProperty(priority)) {
+                                    tasks[priority].sort(compare_task);
+                                }
+                            }
+                            var task_statuses = {};
+                            for (var priority in tasks) {
+                                if (tasks.hasOwnProperty(priority)) {
+                                    for (var task_index = 0; task_index < tasks[priority].length; task_index++) {
+                                        var task = tasks[priority][task_index];
+                                        if (task_statuses[task.state] == undefined) {
+                                            task_statuses[task.state] = [];
+                                        }
+                                        task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).fromNow());
+                                    }
+                                }
                             }
                             for (var state in task_statuses) {
                                 if (task_statuses.hasOwnProperty(state)) {
@@ -2531,62 +2603,79 @@ task_status = function(event, context, argv) {
     }
 }
 
+add_auto_task = function(event, context, params) {
+    params.title = params.title || null;
+    params.description = params.description || null;
+    params.finish = params.finish || null;
+    params.estimate = params.estimate || null;
+    params.owner = params.owner || null;
+    params.tags = params.tags || null;
+    params.priority = params.priority || null;
+    params.instructions = params.instructions || null;
+    process_task(event, context, params.title, params.description, params.finish, params.estimate,
+            params.owner, params.tags, params.priority, params.instructions, function(task_body) {
+                task_body.current_user = "slack-bot";
+                request({
+                    url: "/tasks",
+                    baseUrl: api_endpoint,
+                    method: "POST",
+                    json: true,
+                    body: task_body
+                }, function(err, resp, body) {
+                    if (err) {
+                        console.log(err);
+                    } else if (resp.statusCode != 200) {
+                        console.log(resp);
+                        console.log(body);
+                    } else {
+                        console.log("Task added!");
+                    }
+                    context.done();
+                });
+            }, function(error_message) {
+                console.log(error_message);
+                context.done();
+            });
+};
+
 exports.handler = function(event, context) {
     if (event.channel_name != undefined) {
         if (event.channel_name == 'auto-signups' && event.bot_name == 'bookingbot') {
             var parts = event.text.split('*');
             var customer_name = parts[1].replace('&lt;', '<').replace('&gt;', '>');
             var address = parts[3];
-            process_task(event, context, "CAD task: " + customer_name + " (" + address + ")",
-                    "Go and claim this house at https://my.ezhome.com/admin/blueprints_queue/",
-                    null, null, "joana", "cad:auto-signups", 100, function(task_body) {
-                        task_body.current_user = "joana@ezhome.io";
-                        request({
-                            url: "/tasks",
-                            baseUrl: api_endpoint,
-                            method: "POST",
-                            json: true,
-                            body: task_body
-                        }, function(err, resp, body) {
-                            if (err) {
-                                console.log(err);
-                            } else if (resp.statusCode != 200) {
-                                console.log(resp);
-                                console.log(body);
-                            } else {
-                                console.log("Task added from auto-signups!");
-                            }
-                            context.done();
-                        });
-                    }, function(error_message) {
-                        console.log(error_message);
-                        context.done();
-                    });
+            add_auto_task(event, context, {
+                title: "CAD task: " + customer_name + " (" + address + ")",
+                description: "Go and claim this house at https://my.ezhome.com/admin/blueprints_queue/\n" + event.text,
+                owner: "joana",
+                tags: "cad:auto-signups cad",
+                priority: 100,
+                instructions: "https://docs.google.com/document/d/1q_dHMJFjxyRzHPS38c9NwRIhADKrqb62rE8Edep5Ffg",
+            });
         } else if (event.channel_name == 'auto-close' && event.bot_name == 'bookingbot') {
             var parts = event.text.split('*');
             var customer_name = parts[1];
             var address = parts[3];
-            process_task(event, context, "Central repo task: " + customer_name + " (" + address + ")",
-                    null, null, null, "jenny", "central-repo:auto-close", 20, function(task_body) {
-                        task_body.current_user = "jenny@ezhome.com";
-                        request({
-                            url: "/tasks",
-                            baseUrl: api_endpoint,
-                            method: "POST",
-                            json: true,
-                            body: task_body
-                        }, function(err, resp, body) {
-                            if (err) {
-                                console.log(err);
-                            } else if (resp.statusCode != 200) {
-                                console.log(resp);
-                                console.log(body);
-                            } else {
-                                console.log("Task added from auto-close!");
-                            }
-                            context.done();
-                        });
-                    });
+            add_auto_task(event, context, {
+                title: "Central repo task: " + customer_name + " (" + address + ")",
+                description: event.text,
+                owner: "jenny",
+                tags: "central-repo:auto-close data",
+                priority: 20,
+                instructions: "https://docs.google.com/document/d/1x-tWSVIJUKM8dLgkr5GmzYugRzeWSS-HfLLzeeiohYo",
+            });
+        } else if (event.channel_name == 'test-add-task') {
+            var parts = event.text.split('*');
+            var customer_name = parts[1];
+            var address = parts[3];
+            add_auto_task(event, context, {
+                title: "Central repo task: " + customer_name + " (" + address + ")",
+                description: event.text,
+                owner: "jenny",
+                tags: "central-repo:auto-close backoffice",
+                priority: 20,
+                instructions: "https://docs.google.com/document/d/1x-tWSVIJUKM8dLgkr5GmzYugRzeWSS-HfLLzeeiohYo",
+            });
         }
     } else {
         time_start = (new Date()).getTime();
