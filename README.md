@@ -330,6 +330,8 @@ USAGE
               # in an order that reflects what task should be first : the top of the list should be the 
               # task that should be done first. (It maps to `GET /tasks/available`)
 
+
+
 (unfortunately the current API defn requires a web call for each row of the list output)
 
 ===============================================================
