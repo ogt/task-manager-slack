@@ -1398,6 +1398,11 @@ format_task_output = function(task, users_info, show_long) {
             value: task.state,
             short: true
         },
+        {
+            title: "Created",
+            value: moment(task._created_on).fromNow(),
+            short: true
+        }
         ]
     };
 
@@ -1527,7 +1532,7 @@ jobs = function(event, context, argv) {
 }
 
 list = function(event, context, argv) {
-    var state = null, owner = null, tag = null, num = null, show_long = false, queue = false;
+    var state = null, owner = null, tag = null, num = 10, show_long = false;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
         switch (argv[arg_index]) {
@@ -1554,10 +1559,6 @@ list = function(event, context, argv) {
             case "--long":
                 show_long = true;
                 break;
-            case "-q":
-            case "--queue":
-                queue = true;
-                break;
             default:
                 has_errors = true;
                 fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
@@ -1565,15 +1566,12 @@ list = function(event, context, argv) {
         }
     }
 
-    post_to_api = function(queries, users_info, queue) {
+    post_to_api = function(queries, users_info) {
         var query_string = "";
         if (queries.length > 0) {
             query_string = "?" + queries.join("&");
         }
         var url = "/tasks";
-        if (queue) {
-            url += "/available";
-        }
         request({
             url: url + query_string,
             baseUrl: api_endpoint,
@@ -1609,48 +1607,13 @@ list = function(event, context, argv) {
                                 var member = users_info.members[member_index];
                                 user_email_map[member.profile.email] = member.name;
                             }
-                            var tasks = {};
-                            var priority_index = 0;
-                            var prev_priority = -100;
+                            var task_statuses = {};
                             for (var task_index = 0; task_index < body.length; task_index++) {
                                 var task = body[task_index];
-                                if (task.priority != prev_priority) {
-                                    priority_index++;
-                                    prev_priority = task.priority;
-                                    if (tasks[priority_index.toString()] == undefined) {
-                                        tasks[priority_index.toString()] = [];
-                                    }
+                                if (task_statuses[task.state] == undefined) {
+                                    task_statuses[task.state] = [];
                                 }
-                                tasks[priority_index.toString()].push(task);
-                            }
-
-                            compare_task = function(a, b) {
-                                if (a._created_on < b._created_on) {
-                                    return -1;
-                                }
-                                if (a._created_on > b._created_on) {
-                                    return 1;
-                                }
-
-                                return 0;
-                            };
-
-                            for (var priority in tasks) {
-                                if (tasks.hasOwnProperty(priority)) {
-                                    tasks[priority].sort(compare_task);
-                                }
-                            }
-                            var task_statuses = {};
-                            for (var priority in tasks) {
-                                if (tasks.hasOwnProperty(priority)) {
-                                    for (var task_index = 0; task_index < tasks[priority].length; task_index++) {
-                                        var task = tasks[priority][task_index];
-                                        if (task_statuses[task.state] == undefined) {
-                                            task_statuses[task.state] = [];
-                                        }
-                                        task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).fromNow());
-                                    }
-                                }
+                                task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).fromNow());
                             }
                             for (var state in task_statuses) {
                                 if (task_statuses.hasOwnProperty(state)) {
@@ -1683,11 +1646,11 @@ list = function(event, context, argv) {
         if (owner != null) {
             parse_owner(owner, {}, function(task_body, users_info) {
                 queries.push("owner=" + encodeURIComponent(task_body.owner));
-                post_to_api(queries, users_info, queue);
+                post_to_api(queries, users_info);
             });
         } else {
             retrieve_owner(function(users_info) {
-                post_to_api(queries, users_info, queue);
+                post_to_api(queries, users_info);
             });
         }
     }
