@@ -1891,7 +1891,7 @@ last = function(event, context, argv) {
 }
 
 peek = function(event, context, argv) {
-    var brief = false, show_long = false;
+    var brief = false, show_long = false, tag = null;
     var has_errors = false;
     for (var arg_index = 1; arg_index < argv.length; arg_index++) {
         switch (argv[arg_index]) {
@@ -1903,6 +1903,11 @@ peek = function(event, context, argv) {
             case "--long":
                 show_long = true;
                 break;
+            case "-g":
+            case "--tags":
+                tag = argv[arg_index + 1];
+                arg_index++;
+                break;
             default:
                 has_errors = true;
                 fail_message(event, context, "Unrecognized option: \"" + argv[arg_index] + "\"");
@@ -1912,8 +1917,12 @@ peek = function(event, context, argv) {
 
     if (!has_errors) {
         get_user_from_slack(event, context, {}, function(task_body) {
+            var url = "/tasks/available?current_user=" + encodeURIComponent(task_body.current_user);
+            if (tag != null) {
+                url += "&tag=" + encodeURIComponent(tag);
+            }
             request({
-                url: "/tasks/available?current_user=" + encodeURIComponent(task_body.current_user),
+                url: url,
                 baseUrl: api_endpoint,
                 method: "GET",
                 json: true
@@ -1951,11 +1960,15 @@ peek = function(event, context, argv) {
 }
 
 grab = function(event, context, argv) {
-    var task_id = null;
+    var task_id = null, tag = null;
     if (argv.length > 1) {
-        task_id = parseInt(argv[1]);
-        if (isNaN(task_id)) {
-            task_id = null;
+        if (argv[1] == "-g" || argv[1] == "--tags") {
+            tag = argv[2];
+        } else {
+            task_id = parseInt(argv[1]);
+            if (isNaN(task_id)) {
+                task_id = null;
+            }
         }
     }
 
@@ -1974,6 +1987,9 @@ grab = function(event, context, argv) {
                 current_user: task_body.current_user
             }
         };
+        if (tag != null) {
+            params.body.tag = tag;
+        }
         request(params, function(err, resp, body) {
             console.log(params);
             if (err) {
@@ -2776,28 +2792,43 @@ exports.handler = function(event, context) {
                 who(event, context, argv);
                 break;
             case "man":
-                output(event, context, {
-                    text: "```\nadd      - Adds task(s) in the queue\n" +
-                        "update   - Update existing task - only possible while the task sits\n" +
-                        "delete   - Deletes task(s) from the queue\n" +
-                        "finger   - Shows info about a particular user\n" +
-                        "list     - Lists all tasks in the queue\n" +
-                        "jobs     - List all the tasks that the user has grabbed (current and suspended)\n" +
-                        "last     - Log of logins and logouts\n" +
-                        "show     - Shows info and stats about a specific task\n" +
-                        "start    - Begins a new session\n" +
-                        "finish   - Ends the current session\n" +
-                        "peek     - Shows you the next task that should be grabbed\n" +
-                        "grab     - Take a task from the queue, making it the current task. If you were already working on a task suspend it\n" +
-                        "release  - Puts task back to the queue without doing it\n" +
-                        "bg       - Suspends a currently active task\n" +
-                        "fg       - Activates a suspended task\n" +
-                        "sudo     - Assume the identity of a logged in user\n" +
-                        "done     - Mark the current task as completed\n" +
-                        "purge    - Completely removes deleted or completed task\n" +
-                        "man      - Shows this page\n```\n",
-                    mrkdwn: true
-                });
+                output_all_help = function() {
+                    output(event, context, {
+                        text: "```\nadd      - Adds task(s) in the queue\n" +
+                            "update   - Update existing task - only possible while the task sits\n" +
+                            "delete   - Deletes task(s) from the queue\n" +
+                            "finger   - Shows info about a particular user\n" +
+                            "list     - Lists all tasks in the queue\n" +
+                            "jobs     - List all the tasks that the user has grabbed (current and suspended)\n" +
+                            "last     - Log of logins and logouts\n" +
+                            "show     - Shows info and stats about a specific task\n" +
+                            "start    - Begins a new session\n" +
+                            "finish   - Ends the current session\n" +
+                            "peek     - Shows you the next task that should be grabbed\n" +
+                            "grab     - Take a task from the queue, making it the current task. If you were already working on a task suspend it\n" +
+                            "release  - Puts task back to the queue without doing it\n" +
+                            "bg       - Suspends a currently active task\n" +
+                            "fg       - Activates a suspended task\n" +
+                            "sudo     - Assume the identity of a logged in user\n" +
+                            "done     - Mark the current task as completed\n" +
+                            "purge    - Completely removes deleted or completed task\n" +
+                            "man      - Shows this page\n```\n",
+                        mrkdwn: true
+                    });
+                };
+                if (argv.length > 1) {
+                    var fs = require('fs');
+                    var data = fs.readFileSync("README.md").toString('utf8');
+                    var command_help = data.split("{{begin:"+argv[1]+"}}");
+                    if (command_help.length > 1) {
+                        command_help = command_help[1].split("{{end:"+argv[1]+"}}")[0].trim();
+                        output(event, context, {text: "```\n" + command_help + "\n```\n", mrkdwn: true});
+                    } else {
+                        output_all_help();
+                    }
+                } else {
+                    output_all_help();
+                }
                 break;
         }
     }
