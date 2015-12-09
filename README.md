@@ -5,7 +5,7 @@ Slack Interface to the task-manager service
 ez add
 ===============================================================
 USAGE 
-ez add -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -o <priority> -g "funny jenny:urgent" -b <batch file>
+ez add -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -p <priority> -g "funny jenny:urgent" -b <batch file>
 
 SUMMARY
 Adds a task with these parameters in the queue
@@ -153,7 +153,7 @@ DESCRIPTION
 
 OUPUT
 If this is a single update, for example
-`/ez update -id 5678 -t 'email me some positive thoughts. I am feeling down!' -e '5 minutes'  -f 'in 10 minutes'`
+`/ez update --id 5678 -t 'email me some positive thoughts. I am feeling down!' -e '5 minutes'  -f 'in 10 minutes'`
 the output is
 ----
 Task 5678 Updated! 
@@ -243,7 +243,7 @@ DESCRIPTION
 
 OUTPUT
 If this is a single delete, for example
-`/ez delete -id 5678 
+`/ez delete --id 5678 
 the output is
 ----
 Task 5678 Deleted! 
