@@ -1,6 +1,7 @@
 # task-manager-slack
 Slack Interface to the task-manager service
 ```
+{{begin:add}}
 ===============================================================
 ez add
 ===============================================================
@@ -118,8 +119,9 @@ Errors =>
 | some title             | some error |
 | some title             | some error |
 +------------------------+------------+
-----
+{{end:add}}
 
+{{begin:update}}
 ===============================================================
 ez update
 ===============================================================
@@ -213,8 +215,9 @@ Errors =>
 |  xxxxx| some title             | some error |
 +-------+------------------------+------------+
 
-----
+{{end:update}}
 
+{{begin:delete}}
 ===============================================================
 ez delete
 ===============================================================
@@ -297,7 +300,9 @@ Errors =>
 |  xxxxx| some title             | some error |
 |  xxxxx| some title             | some error |
 +-------+------------------------+------------+
+{{end:delete}}
 
+{{begin:list}}
 ===============================================================
 ez list
 ===============================================================
@@ -330,10 +335,10 @@ USAGE
               # in an order that reflects what task should be first : the top of the list should be the 
               # task that should be done first. (It maps to `GET /tasks/available`)
 
-
-
 (unfortunately the current API defn requires a web call for each row of the list output)
+{{end:list}}
 
+{{begin:show}}
 ===============================================================
 ez show
 ===============================================================
@@ -386,8 +391,9 @@ When the event log history is included
 | Nov 2 09:23 |   joe@ezhome.com      |    add   |
 | Nov 2 09:23 |   joe@ezhome.com      |    add   |
 +-------------+-----------------------+----------+
+{{end:show}}
 
-
+{{begin:peek}}
 ===============================================================
 ez peek
 ===============================================================
@@ -434,6 +440,9 @@ In its long form it also includes the rest of the attributes
   _completion_status : success or failure   # if the test is completed 
   _completed_on : '2015-11-20T17:26:33Z'    # if the test is completed 
 
+{{end:peek}}
+
+{{begin:grab}}
 ===============================================================
 ez grab [<task_id>]
 ===============================================================
@@ -473,7 +482,9 @@ Task 4567 Grabbed  <release> <done-success> <done-fail>
 Suspended tasks
 + 1567 Task title 1  <fg>
 + 3876 Task Title 2  <fg>
+{{end:grab}}
 
+{{begin:done}}
 ===============================================================
 ez done 
 ===============================================================
@@ -520,6 +531,7 @@ Active task
 Suspended tasks
 + 1567 Task title 1  <fg>
 + 3876 Task Title 2  <fg>
+{{end:grab}}
 
 
 ```
