@@ -1,6 +1,6 @@
 var request = require("request");
 var chrono = require("chrono-node");
-var moment = require("moment");
+var moment = require("moment-timezone");
 
 var api_endpoint = "";
 var slack_token = "";
@@ -381,7 +381,8 @@ add = function(event, context, argv) {
                         fail_message(event, context, error_message);
                     });
         } else {
-            get_user_from_slack(event, context, task_body, function(task_body) {
+            get_user_from_slack(event, context, {}, function(task_body) {
+                var current_user = task_body.current_user;
                 request(batch, function(err, resp, body) {
                     if (err) {
                         console.log("Failed to get URL: " + batch);
@@ -466,7 +467,7 @@ add = function(event, context, argv) {
                                 result += "```\n";
                             }
 
-                            output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+                            output(event, context, {text: result, mrkdwn: true});
                         };
 
                         var success_result = [];
@@ -486,7 +487,7 @@ add = function(event, context, argv) {
                         var lines = body.split("\n");
                         var column_names = lines[0].split(",");
                         for (var column_index = 0; column_index < column_names.length; column_index++) {
-                            var column_name = column_names[column_index];
+                            var column_name = column_names[column_index].trim();
                             if (column_map[column_name] == -1) {
                                 column_map[column_name] = column_index;
                             }
@@ -494,7 +495,7 @@ add = function(event, context, argv) {
 
                         var running_queue = 0;
                         for (var line_index = 1; line_index < lines.length; line_index++) {
-                            var curr_line = lines[line_index];
+                            var curr_line = lines[line_index].trim();
                             var columns = parse_csv_line(curr_line);
 
                             running_queue++;
@@ -560,6 +561,7 @@ add = function(event, context, argv) {
 
                                 process_task(event, context, task_title, task_description, task_finish, task_estimate,
                                         task_owner, task_tags, task_priority, task_instructions, function(task_body) {
+                                            task_body.current_user = current_user;
                                             request({
                                                 url: "/tasks",
                                                 baseUrl: api_endpoint,
@@ -587,7 +589,8 @@ add = function(event, context, argv) {
                                                     if (body.errorMessage != undefined) {
                                                         failure_result.push({
                                                             line: line_index,
-                                                            error: body.errorMessage
+                                                            error: body.errorMessage,
+                                                            title: task_title
                                                         });
                                                     } else {
                                                         success_result.push({
@@ -849,7 +852,7 @@ update = function(event, context, argv) {
                                 result += "```\n";
                             }
 
-                            output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+                            output(event, context, {text: result, mrkdwn: true});
                         };
 
                         var success_result = [];
@@ -1153,7 +1156,7 @@ task_delete = function(event, context, argv) {
             result += "```\n";
         }
 
-        output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+        output(event, context, {text: result, mrkdwn: true});
     }
 
     if (!has_errors) {
@@ -1400,7 +1403,7 @@ format_task_output = function(task, users_info, show_long) {
         },
         {
             title: "Created",
-            value: moment(task._created_on).fromNow(),
+            value: moment(task._created_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY"),
             short: true
         }
         ]
@@ -1473,15 +1476,14 @@ format_task_output = function(task, users_info, show_long) {
 
 jobs = function(event, context, argv) {
     var owner = argv[1];
-    if (owner != undefined) {
-        parse_owner(owner, {}, function(task_body, users_info) {
-            request({
-                url: "/workers/" + encodeURIComponent(task_body.owner) + "/tasks",
-                baseUrl: api_endpoint,
-                method: "GET",
-                json: true
-            }, function(err, resp, body) {
-                console.log("/workers/" + encodeURIComponent(task_body.owner) + "/tasks")
+    list_jobs = function(task_body, users_info) {
+        request({
+            url: "/workers/" + encodeURIComponent(task_body.owner) + "/tasks",
+            baseUrl: api_endpoint,
+            method: "GET",
+            json: true
+        }, function(err, resp, body) {
+            console.log("/workers/" + encodeURIComponent(task_body.owner) + "/tasks")
                 if (err) {
                     console.log("Failed to get to /workers/"+task_body.owner+"/tasks");
                     console.log(err);
@@ -1509,7 +1511,7 @@ jobs = function(event, context, argv) {
                                 if (task_statuses[task._work_status] == undefined) {
                                     task_statuses[task._work_status] = [];
                                 }
-                                task_statuses[task._work_status].push("• [" + task._id + "] Do \"" + task.title + "\" by " + moment(task.deadline).format("h:mm a dddd, MMMM YYYY") + ", " + task._work_status);
+                                task_statuses[task._work_status].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY"));
                             }
                             for (var state in task_statuses) {
                                 if (task_statuses.hasOwnProperty(state)) {
@@ -1524,10 +1526,12 @@ jobs = function(event, context, argv) {
                         output(event, context, {text: text, mrkdwn: true});
                     }
                 }
-            });
         });
+    };
+    if (owner != undefined) {
+        parse_owner(owner, {}, list_jobs);
     } else {
-        fail_message(event, context, "You must specify a user!");
+        parse_owner(event.user_name, {}, list_jobs);
     }
 }
 
@@ -1550,6 +1554,7 @@ list = function(event, context, argv) {
             case "--tag":
                 tag = argv[arg_index + 1];
                 arg_index++;
+                break;
             case "-n":
             case "--num":
                 num = argv[arg_index + 1];
@@ -1565,8 +1570,10 @@ list = function(event, context, argv) {
                 break;
         }
     }
+    
+    console.log(show_long);
 
-    post_to_api = function(queries, users_info) {
+    post_to_api = function(queries, users_info, show_long) {
         var query_string = "";
         if (queries.length > 0) {
             query_string = "?" + queries.join("&");
@@ -1592,39 +1599,43 @@ list = function(event, context, argv) {
                 if (body.errorMessage != undefined) {
                     output(event, context, {text: body.errorMessage});
                 } else {
-                    if (show_long) {
-                        var attachments = [];
+                    var text = "";
+                    if (body.length > 0) {
+                        var user_email_map = {};
+                        for (var member_index = 0; member_index < users_info.members.length; member_index++) {
+                            var member = users_info.members[member_index];
+                            user_email_map[member.profile.email] = member.name;
+                        }
+                        var task_statuses = {};
                         for (var task_index = 0; task_index < body.length; task_index++) {
                             var task = body[task_index];
-                            attachments.push(format_task_output(task, users_info, show_long));
+                            if (task_statuses[task.state] == undefined) {
+                                task_statuses[task.state] = [];
+                            }
+                            if (show_long) {
+                                task_statuses[task.state].push(format_task_output(task, users_info, show_long));
+                            } else {
+                                task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY"));
+                            }
                         }
-                        output(event, context, {attachments: attachments, response_type: "in_channel"});
-                    } else {
-                        var text = "";
-                        if (body.length > 0) {
-                            var user_email_map = {};
-                            for (var member_index = 0; member_index < users_info.members.length; member_index++) {
-                                var member = users_info.members[member_index];
-                                user_email_map[member.profile.email] = member.name;
-                            }
-                            var task_statuses = {};
-                            for (var task_index = 0; task_index < body.length; task_index++) {
-                                var task = body[task_index];
-                                if (task_statuses[task.state] == undefined) {
-                                    task_statuses[task.state] = [];
-                                }
-                                task_statuses[task.state].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).fromNow());
-                            }
-                            for (var state in task_statuses) {
-                                if (task_statuses.hasOwnProperty(state)) {
+                        var attachments = [];
+                        for (var state in task_statuses) {
+                            if (task_statuses.hasOwnProperty(state)) {
+                                if (show_long) {
+                                    attachments = attachments.concat(task_statuses[state]);
+                                } else {
                                     text += state + ":\n";
                                     text += task_statuses[state].join("\n");
                                     text += "\n";
                                 }
-                            } 
-                        } else {
-                            text = "There's no tasks!!";
-                        }
+                            }
+                        } 
+                    } else {
+                        text = "There's no tasks!!";
+                    }
+                    if (show_long) {
+                        output(event, context, {attachments: attachments});
+                    } else {
                         output(event, context, {text: text, mrkdwn: true});
                     }
                 }
@@ -1646,11 +1657,11 @@ list = function(event, context, argv) {
         if (owner != null) {
             parse_owner(owner, {}, function(task_body, users_info) {
                 queries.push("owner=" + encodeURIComponent(task_body.owner));
-                post_to_api(queries, users_info);
+                post_to_api(queries, users_info, show_long);
             });
         } else {
             retrieve_owner(function(users_info) {
-                post_to_api(queries, users_info);
+                post_to_api(queries, users_info, show_long);
             });
         }
     }
@@ -1711,7 +1722,6 @@ show = function(event, context, argv) {
                             retrieve_owner(function(users_info) {
                                 output(event, context, {
                                     attachments: [format_task_output(task, users_info, show_long)],
-                                    response_type: "in_channel"
                                 }, history);
                                 if (history) {
                                     request({
@@ -1747,14 +1757,19 @@ show = function(event, context, argv) {
                                                 var user_title = "User";
                                                 var action_title = "Action";
 
+                                                console.log(events);
+
                                                 var max_date = 4;
                                                 var max_user = 4;
                                                 var max_action = 6;
                                                 for (var event_index = 0; event_index < events.length; event_index++) {
+                                                    events[event_index].when = moment(events[event_index].when).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY");
                                                     if (max_date < events[event_index].when.length) {
                                                         max_date = events[event_index].when.length;
                                                     }
-                                                    events[event_index].who = users_list[events[event_index].who];
+                                                    if (users_list[events[event_index].who] != undefined) {
+                                                        events[event_index].who = users_list[events[event_index].who];
+                                                    }
                                                     if (max_user < events[event_index].who.length) {
                                                         max_user = events[event_index].who.length;
                                                     }
@@ -1826,7 +1841,7 @@ show = function(event, context, argv) {
                                                 result += title_border + "\n";
                                                 result += "```\n";
 
-                                                output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+                                                output(event, context, {text: result, mrkdwn: true});
                                             });
                                         }
                                     });
@@ -1866,12 +1881,14 @@ last = function(event, context, argv) {
                     var response = "";
                     if (body.length > 0) {
                         for (var item_index = 0; item_index < body.length; item_index++) {
-                            var action = "Login";
+                            var action = "Start";
                             if (body[item_index].action == "logout") {
-                                action = "Logout";
+                                action = "Finish";
                             }
-                            response += "• " + moment(body[item_index].date).format("h:mm a dddd, MMMM YYYY") + ", " + action + "\n";
+                            response += "• " + moment(body[item_index].date).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY") + ", " + action + "\n";
                         }
+                    } else {
+                        response = "No sessions started yet!";
                     }
                     output(event, context, {text: response, mrkdwn: true});
                 }
@@ -1948,7 +1965,6 @@ peek = function(event, context, argv) {
                             retrieve_owner(function(users_info) {
                                 output(event, context, {
                                     attachments: [format_task_output(task, users_info, show_long)],
-                                    response_type: "in_channel"
                                 });
                             });
                         }
@@ -1960,67 +1976,69 @@ peek = function(event, context, argv) {
 }
 
 grab = function(event, context, argv) {
-    var task_id = null, tag = null;
+    var task_id = null, tag = null, has_errors = false;
     if (argv.length > 1) {
         if (argv[1] == "-g" || argv[1] == "--tags") {
             tag = argv[2];
         } else {
             task_id = parseInt(argv[1]);
             if (isNaN(task_id)) {
-                task_id = null;
+                fail_message(event, context, "Invalid option/argument: " + argv[1]);
+                has_errors = true;
             }
         }
     }
 
-    var url = "/workers/tasks";
-    if (task_id != null) {
-        url += "/" + task_id;
-    }
-
-    get_user_from_slack(event, context, {}, function(task_body) {
-        var params = {
-            url: url,
-            baseUrl: api_endpoint,
-            method: "POST",
-            json: true,
-            body: {
-                current_user: task_body.current_user
-            }
-        };
-        if (tag != null) {
-            params.body.tag = tag;
+    if (!has_errors) {
+        var url = "/workers/tasks";
+        if (task_id != null) {
+            url += "/" + task_id;
         }
-        request(params, function(err, resp, body) {
-            console.log(params);
-            if (err) {
-                console.log("Failed to post to /workers/tasks");
-                console.log(err);
-                fail_message(event, context, "Oops... something went wrong!");
-            } else if (resp.statusCode != 200) {
-                console.log("Failed to post to /workers/tasks");
-                console.log(resp);
-                console.log(body);
-                fail_message(event, context, "Oops... something went wrong!");
-            } else {
-                console.log(body);
-                if (body && body.errorMessage != undefined) {
-                    output(event, context, {text: body.errorMessage});
+
+        get_user_from_slack(event, context, {}, function(task_body) {
+            var params = {
+                url: url,
+                baseUrl: api_endpoint,
+                method: "POST",
+                json: true,
+                body: {
+                    current_user: task_body.current_user
+                }
+            };
+            if (tag != null) {
+                params.body.tag = tag;
+            }
+            request(params, function(err, resp, body) {
+                console.log(params);
+                if (err) {
+                    console.log("Failed to post to /workers/tasks");
+                    console.log(err);
+                    fail_message(event, context, "Oops... something went wrong!");
+                } else if (resp.statusCode != 200) {
+                    console.log("Failed to post to /workers/tasks");
+                    console.log(resp);
+                    console.log(body);
+                    fail_message(event, context, "Oops... something went wrong!");
                 } else {
-                    var task = body;
-                    if (body.text != undefined) {
-                        output(event, context, body);
+                    console.log(body);
+                    if (body && body.errorMessage != undefined) {
+                        output(event, context, {text: body.errorMessage});
                     } else {
-                        retrieve_owner(function(users_info) {
-                            output(event, context, {
-                                attachments: [format_task_output(task, users_info, true)],
-                                response_type: "in_channel"
+                        var task = body;
+                        if (body.text != undefined) {
+                            output(event, context, body);
+                        } else {
+                            retrieve_owner(function(users_info) {
+                                output(event, context, {
+                                    attachments: [format_task_output(task, users_info, true)],
+                                });
                             });
-                        });
+                        }
                     }
                 }
-            }
+            });
         });
-    });
+    }
 }
 
 purge = function(event, context, argv) {
@@ -2164,7 +2182,7 @@ purge = function(event, context, argv) {
             result += "```\n";
         }
 
-        output(event, context, {response_type: "in_channel", text: result, mrkdwn: true});
+        output(event, context, {text: result, mrkdwn: true});
     }
 
     if (!has_errors) {
@@ -2416,7 +2434,7 @@ who = function(event, context, argv) {
                         for (var item_index = 0; item_index < body.length; item_index++) {
                             var user = body[item_index];
                             if (user["status"] == "loggedin") {
-                                result += "• " + users_lookup[user.userid] + ", logged in on " + moment(user.loggedin_on).format("h:mm a dddd, MMMM YYYY") + "\n";
+                                result += "• " + users_lookup[user.userid] + ", logged in on " + moment(user.loggedin_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY") + "\n";
                             }
                         }
                         output(event, context, {text: result, mrkdwn: true});
@@ -2536,7 +2554,8 @@ task_status = function(event, context, argv) {
         if (argv.length > 1) {
             task_id = parseInt(argv[1]);
             if (isNaN(task_id)) {
-                task_id = null;
+                fail_message(event, context, "Invalid option/argument: " + argv[1]);
+                has_errors = true;
             }
         }
     }
@@ -2618,6 +2637,7 @@ add_auto_task = function(event, context, params) {
 };
 
 exports.handler = function(event, context) {
+    event.text = event.text.replace("–", "-").replace("\u201C", '"').replace("\u201D", '"');
     if (event.channel_name != undefined) {
         if (event.channel_name == 'auto-signups' && event.bot_name == 'bookingbot') {
             var parts = event.text.split('*');
@@ -2640,19 +2660,7 @@ exports.handler = function(event, context) {
                 description: event.text,
                 owner: "jenny",
                 tags: "central-repo:auto-close data",
-                priority: 20,
-                instructions: "https://docs.google.com/document/d/1x-tWSVIJUKM8dLgkr5GmzYugRzeWSS-HfLLzeeiohYo",
-            });
-        } else if (event.channel_name == 'test-add-task') {
-            var parts = event.text.split('*');
-            var customer_name = parts[1];
-            var address = parts[3];
-            add_auto_task(event, context, {
-                title: "Central repo task: " + customer_name + " (" + address + ")",
-                description: event.text,
-                owner: "jenny",
-                tags: "central-repo:auto-close backoffice",
-                priority: 20,
+                priority: 80,
                 instructions: "https://docs.google.com/document/d/1x-tWSVIJUKM8dLgkr5GmzYugRzeWSS-HfLLzeeiohYo",
             });
         }
@@ -2792,42 +2800,25 @@ exports.handler = function(event, context) {
                 who(event, context, argv);
                 break;
             case "man":
-                output_all_help = function() {
+                output_all_help = function(data) {
+                    var help = data.split("{{begin:man}}")[1].split("{{end:man}}")[0].trim();
                     output(event, context, {
-                        text: "```\nadd      - Adds task(s) in the queue\n" +
-                            "update   - Update existing task - only possible while the task sits\n" +
-                            "delete   - Deletes task(s) from the queue\n" +
-                            "finger   - Shows info about a particular user\n" +
-                            "list     - Lists all tasks in the queue\n" +
-                            "jobs     - List all the tasks that the user has grabbed (current and suspended)\n" +
-                            "last     - Log of logins and logouts\n" +
-                            "show     - Shows info and stats about a specific task\n" +
-                            "start    - Begins a new session\n" +
-                            "finish   - Ends the current session\n" +
-                            "peek     - Shows you the next task that should be grabbed\n" +
-                            "grab     - Take a task from the queue, making it the current task. If you were already working on a task suspend it\n" +
-                            "release  - Puts task back to the queue without doing it\n" +
-                            "bg       - Suspends a currently active task\n" +
-                            "fg       - Activates a suspended task\n" +
-                            "sudo     - Assume the identity of a logged in user\n" +
-                            "done     - Mark the current task as completed\n" +
-                            "purge    - Completely removes deleted or completed task\n" +
-                            "man      - Shows this page\n```\n",
+                        text: "```\n" + help + "\n```\n",
                         mrkdwn: true
                     });
                 };
+                var fs = require('fs');
+                var data = fs.readFileSync("README.md").toString('utf8');
                 if (argv.length > 1) {
-                    var fs = require('fs');
-                    var data = fs.readFileSync("README.md").toString('utf8');
                     var command_help = data.split("{{begin:"+argv[1]+"}}");
                     if (command_help.length > 1) {
                         command_help = command_help[1].split("{{end:"+argv[1]+"}}")[0].trim();
                         output(event, context, {text: "```\n" + command_help + "\n```\n", mrkdwn: true});
                     } else {
-                        output_all_help();
+                        output_all_help(data);
                     }
                 } else {
-                    output_all_help();
+                    output_all_help(data);
                 }
                 break;
         }
