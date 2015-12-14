@@ -7,9 +7,10 @@ var slack_token = "";
 
 var time_start = 0;
 
-output = function(event, context, message, dont_set_done) {
+output = function(event, context, message, dont_set_done, set_done_after_post) {
     var duration = (new Date()).getTime() - time_start;
     if (duration >= 1800 || dont_set_done) {
+        console.log(event.response_url);
         request({
             url: event.response_url,
             method: "POST",
@@ -24,8 +25,9 @@ output = function(event, context, message, dont_set_done) {
                 console.log(resp);
                 console.log(body);
             }
-            if (!dont_set_done || dont_set_done == undefined) {
-                context.done();
+            console.log(body);
+            if (!dont_set_done || dont_set_done == undefined || set_done_after_post) {
+                context.succeed({text: "Request completed"});
             }
         });
     } else {
@@ -1440,7 +1442,7 @@ format_task_output = function(task, users_info, show_long) {
             });
             result.fields.push({
                 title: "Worked on",
-                value: task._worked_on,
+                value: moment(task._worked_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY"),
                 short: true
             });
             result.fields.push({
@@ -1457,7 +1459,7 @@ format_task_output = function(task, users_info, show_long) {
                 });
                 result.fields.push({
                     title: "Completed On",
-                    value: task._completed_on,
+                    value: moment(task._completed_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY"),
                     short: true
                 });
             }
@@ -1511,7 +1513,7 @@ jobs = function(event, context, argv) {
                                 if (task_statuses[task._work_status] == undefined) {
                                     task_statuses[task._work_status] = [];
                                 }
-                                task_statuses[task._work_status].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY"));
+                                task_statuses[task._work_status].push("• [" + task._id + "] Do \"" + task.title + "\" priority " + task.priority + ", owned by " + user_email_map[task.owner] + ", created " + moment(task._created_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY") + ", grabbed on " + moment(task._worked_on).tz("America/Los_Angeles").format("h:mm a dddd, MMMM YYYY"));
                             }
                             for (var state in task_statuses) {
                                 if (task_statuses.hasOwnProperty(state)) {
@@ -1634,7 +1636,7 @@ list = function(event, context, argv) {
                         text = "There's no tasks!!";
                     }
                     if (show_long) {
-                        output(event, context, {attachments: attachments});
+                        output(event, context, {attachments: attachments}, true, true);
                     } else {
                         output(event, context, {text: text, mrkdwn: true});
                     }
@@ -1722,7 +1724,7 @@ show = function(event, context, argv) {
                             retrieve_owner(function(users_info) {
                                 output(event, context, {
                                     attachments: [format_task_output(task, users_info, show_long)],
-                                }, history);
+                                }, true, true);
                                 if (history) {
                                     request({
                                         url: "/tasks/" + id + "/history?current_user=" + encodeURIComponent(task_body.current_user),
@@ -1965,7 +1967,7 @@ peek = function(event, context, argv) {
                             retrieve_owner(function(users_info) {
                                 output(event, context, {
                                     attachments: [format_task_output(task, users_info, show_long)],
-                                });
+                                }, true, true);
                             });
                         }
                     }
@@ -2031,7 +2033,7 @@ grab = function(event, context, argv) {
                             retrieve_owner(function(users_info) {
                                 output(event, context, {
                                     attachments: [format_task_output(task, users_info, true)],
-                                });
+                                }, true, true);
                             });
                         }
                     }
@@ -2353,7 +2355,7 @@ finger = function(event, context, argv) {
                     if (body.errorMessage != undefined) {
                         output(event, context, {text: body.errorMessage});
                     } else {
-                        var avg_session_length = moment.duration(body.avg_session_length / 1000).humanize();
+                        var avg_session_length = moment.duration(body.avg_session_length).humanize();
                         output(event, context, {
                             mrkdwn: true,
                             text: "Statistics for " + user + ":\n" +
@@ -2592,8 +2594,17 @@ task_status = function(event, context, argv) {
                     if (body && body.errorMessage != undefined) {
                         output(event, context, {text: body.errorMessage});
                     } else {
-                        // TODO: Output detailed stats for done
-                        output(event, context, {text: body});
+                        if (argv[0] == "done") {
+                            if (body.state == "fail") {
+                                output(event, context, {text: body});
+                            } else {
+                                retrieve_owner(function(users_info) {
+                                    output(event, context, {attachments: [format_task_output(body.task, users_info, true)]}, true, true);
+                                });
+                            }
+                        } else {
+                            output(event, context, {text: body});
+                        }
                     }
                 }
             });
@@ -2637,7 +2648,6 @@ add_auto_task = function(event, context, params) {
 };
 
 exports.handler = function(event, context) {
-    event.text = event.text.replace("–", "-").replace("\u201C", '"').replace("\u201D", '"');
     if (event.channel_name != undefined) {
         if (event.channel_name == 'auto-signups' && event.bot_name == 'bookingbot') {
             var parts = event.text.split('*');
@@ -2665,6 +2675,7 @@ exports.handler = function(event, context) {
             });
         }
     } else {
+        event.text = event.text.replace("–", "-").replace("\u201C", '"').replace("\u201D", '"');
         time_start = (new Date()).getTime();
         var argv = [];
         if (event.text != "") {
@@ -2702,27 +2713,6 @@ exports.handler = function(event, context) {
                             }
                         }
                         // NOTE(yinjun): Consume last "'"
-                        char_index++;
-                    } else if (event.text[char_index] == "\u201C") {
-                        char_index++;
-                        // NOTE(yinjun): There's a weird case here when it's opened with \u201D but then
-                        // if the quote is the last character of the string, it will be ended with the
-                        // normal ascii " character, and since we want to support the case where users
-                        // accidentally try to escape the " characters within the quotes, some weird
-                        // edge case handling is done.
-                        while (event.text[char_index] != "\u201D" && char_index < event.text.length) {
-                            if (event.text[char_index] == '"' && event.text[char_index-1] != '\\' &&
-                                    char_index == event.text.length - 1) {
-                                char_index++;
-                            } else if (event.text[char_index] == '\\' && event.text[char_index] == '"') {
-                                curr_arg += '"';
-                                char_index += 2;
-                            } else {
-                                curr_arg += event.text[char_index];
-                                char_index++;
-                            }
-                        }
-                        // NOTE(yinjun): Consume last '"'
                         char_index++;
                     } else {
                         while (event.text[char_index] != ' ' && char_index < event.text.length) {
