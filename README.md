@@ -67,6 +67,16 @@ DESCRIPTION
               # the tag'sfilename used is the last part of the url if a url was used e.g 
               # if url is https://s3-us-west-2.amazonaws.com/task-manager/0853c054f7541ea6f977c932b81851a8.csv then the tag is
               #   addbatch=0853c054f7541ea6f977c932b81851a8.csv
+-n --instructions
+              # optional
+              # if provided this will be the value of the instructions field of the task
+-h --depends
+              # optional
+              # if provided, the task ID specified must be set to completed before the newly added
+              # task will appear in the queue
+-y --task-type
+              # optional
+              # if provided, any empty values in this task will be inherited from the task type
 
 OUTPUT
 If this is a single add, for example
@@ -121,6 +131,161 @@ Errors =>
 +------------------------+------------+
 {{end:add}}
 
+{{begin:add-type}}
+===============================================================
+ez add-type
+===============================================================
+USAGE 
+ez add-type -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -p <priority> -g "funny jenny:urgent"
+
+SUMMARY
+Adds a new task type that you can use to specify for any tasks.
+
+DESCRIPTION
+
+-n --name
+              # required
+              # the name of this type
+-t --title    
+              # optional 
+              # sets the title attribue of the task
+-d --description
+              # optional
+              # sets the description attribute of the task
+              # if ommited - stays blank
+-f --finish : 
+              # optional 
+              # sets the deadline task attribute 
+              # accepts several free form descriptions of datetime 
+              # both in terms of interval from now as well as absolute timestamps
+              # e.g. "in 5 minutes" "by Monday" "by noon tomorrow" "by end of month" "in 24 hours" "ASAP"
+              # the command line handler parses the above and sets the deadline attribute as an absolute timestamp
+              # the exact human string provided is not stored anywhere
+-e --estimate : 
+              # optional
+              # sets the estimate attribute
+              # accepts several free form descriptions of an interval "5 minutes" "3 hours" "a day"
+              # ans sets the estimate in terms of secondds
+-o --owner :  
+              # optional 
+              # Sets the owner attribute
+              # accepts @users in slack and  emails when submitted in the Unix command line
+              # when using the email convention the @ezhome.com can be ommitted
+              # when issued from slack the current user is the currently authenticated slack user
+              # when issued from the command line the current user is the currently authenticated aws user??
+-p --priority :  
+              # optional 
+              # Sets the priority attribute
+              # accepts any number. It influences the queue order (the order the results show on `list`)
+              # higher priority tasks appear first, within the same priority earlier tasks appear first)
+              # as a result priority attribute value affect both `peek` and `grab` operation
+              # if ommitted it is the same as setting the priority to 0
+-g --tags     # optional
+              # a single argument of space separated tags
+              # sets the tags attribute
+-b --batch    
+              # optional
+              # if provided accepts a csv-file-with-header (file-or-url for Unix, url-only for Slack) that allows a batch of add 
+              # commands to be executed in sequence
+              # the csv file has header that uses the long form  of the command parameters (e.g. "description" instead of just "d")
+              # if a parameter value in a row is missing the ones provided explicitely at the command line would be used
+              # if those are missing the command defaults are being used
+              # (Unix only) if - is the filename then the command expects the file from the standard input 
+              # command auto-guesses if the filename is a url or a filename
+              # the command handler always adds a tag "addbatch=filename" that specifies the file used in the batch operation
+              # the tag'sfilename used is the last part of the url if a url was used e.g 
+              # if url is https://s3-us-west-2.amazonaws.com/task-manager/0853c054f7541ea6f977c932b81851a8.csv then the tag is
+              #   addbatch=0853c054f7541ea6f977c932b81851a8.csv
+-n --instructions
+              # optional
+              # if provided this will be the value of the instructions field of the task
+-p --parent
+              # optional
+              # if provided, any empty values in this task type will be inherited from the task type
+
+OUTPUT
+
+{{end:add-type}}
+
+{{begin:update-type}}
+===============================================================
+ez update-type
+===============================================================
+USAGE 
+ez update-type -i <id> -t <title> -d <description> -e <estimate> -f <finish by> -o <owner> -p <priority> -g "funny jenny:urgent"
+
+SUMMARY
+Updates an existing task type.
+
+DESCRIPTION
+
+-i --id
+              # required
+              # Type ID to edit
+-n --name
+              # optional
+              # the name of this type
+-t --title    
+              # optional 
+              # sets the title attribue of the task
+-d --description
+              # optional
+              # sets the description attribute of the task
+              # if ommited - stays blank
+-f --finish : 
+              # optional 
+              # sets the deadline task attribute 
+              # accepts several free form descriptions of datetime 
+              # both in terms of interval from now as well as absolute timestamps
+              # e.g. "in 5 minutes" "by Monday" "by noon tomorrow" "by end of month" "in 24 hours" "ASAP"
+              # the command line handler parses the above and sets the deadline attribute as an absolute timestamp
+              # the exact human string provided is not stored anywhere
+-e --estimate : 
+              # optional
+              # sets the estimate attribute
+              # accepts several free form descriptions of an interval "5 minutes" "3 hours" "a day"
+              # ans sets the estimate in terms of secondds
+-o --owner :  
+              # optional 
+              # Sets the owner attribute
+              # accepts @users in slack and  emails when submitted in the Unix command line
+              # when using the email convention the @ezhome.com can be ommitted
+              # when issued from slack the current user is the currently authenticated slack user
+              # when issued from the command line the current user is the currently authenticated aws user??
+-p --priority :  
+              # optional 
+              # Sets the priority attribute
+              # accepts any number. It influences the queue order (the order the results show on `list`)
+              # higher priority tasks appear first, within the same priority earlier tasks appear first)
+              # as a result priority attribute value affect both `peek` and `grab` operation
+              # if ommitted it is the same as setting the priority to 0
+-g --tags     # optional
+              # a single argument of space separated tags
+              # sets the tags attribute
+-b --batch    
+              # optional
+              # if provided accepts a csv-file-with-header (file-or-url for Unix, url-only for Slack) that allows a batch of add 
+              # commands to be executed in sequence
+              # the csv file has header that uses the long form  of the command parameters (e.g. "description" instead of just "d")
+              # if a parameter value in a row is missing the ones provided explicitely at the command line would be used
+              # if those are missing the command defaults are being used
+              # (Unix only) if - is the filename then the command expects the file from the standard input 
+              # command auto-guesses if the filename is a url or a filename
+              # the command handler always adds a tag "addbatch=filename" that specifies the file used in the batch operation
+              # the tag'sfilename used is the last part of the url if a url was used e.g 
+              # if url is https://s3-us-west-2.amazonaws.com/task-manager/0853c054f7541ea6f977c932b81851a8.csv then the tag is
+              #   addbatch=0853c054f7541ea6f977c932b81851a8.csv
+-n --instructions
+              # optional
+              # if provided this will be the value of the instructions field of the task
+-p --parent
+              # optional
+              # if provided, any empty values in this task type will be inherited from the task type
+
+OUTPUT
+
+{{end:update-type}}
+
 {{begin:update}}
 ===============================================================
 ez update
@@ -152,6 +317,16 @@ DESCRIPTION
               # the id column has to be present in the file and filled in for each row 
               # also note that we are appending a subsequent updatebatch=xxx for each subsequent batch update
               # to the tags
+-n --instructions
+              # optional
+              # if provided this will be the value of the instructions field of the task
+-h --depends
+              # optional
+              # if provided, the task ID specified must be set to completed before the newly added
+              # task will appear in the queue
+-y --task-type
+              # optional
+              # if provided, any empty values in this task will be inherited from the task type
 
 OUPUT
 If this is a single update, for example
@@ -531,7 +706,34 @@ Active task
 Suspended tasks
 + 1567 Task title 1  <fg>
 + 3876 Task Title 2  <fg>
-{{end:grab}}
+{{end:done}}
 
+{{begin:man}}
+add         - Adds task(s) in the queue
+update      - Update existing task - only possible while the task sits
+delete      - Deletes task(s) from the queue
+finger      - Shows info about a particular user
+list        - Lists all tasks in the queue
+jobs        - List all the tasks that the user has grabbed (current and suspended)
+last        - Log of logins and logouts
+show        - Shows info and stats about a specific task
+start       - Begins a new session
+finish      - Ends the current session
+peek        - Shows you the next task that should be grabbed
+grab        - Take a task from the queue, making it the current task. If you were already working on a task suspend it
+release     - Puts task back to the queue without doing it
+bg          - Suspends a currently active task
+fg          - Activates a suspended task
+sudo        - Assume the identity of a logged in user
+done        - Mark the current task as completed
+purge       - Completely removes deleted or completed task
+man         - Shows this page
+who         - Shows logged in users
+jobs        - Shows jobs grabbed (active/suspended)
+add-type    - Adds a new task type
+update-type - Updates an existing type
+list-type   - Lists all task types
+show-type   - Shows the information of a task type
+{{end:man}}
 
 ```
